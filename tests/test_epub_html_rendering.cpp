@@ -2,8 +2,10 @@
 #include "book/book_context.h"
 #include "book/book_xml.h"
 #include "book/book_xml_flow_emission.h"
+#include "book/book_xml_image_handler.h"
 #include "book/book_xml_screen_advance.h"
 #include "book/page.h"
+#include "book_inline_image_stub_test_api.h"
 #include "formats/common/xml_parse_utils.h"
 #include "parse.h"
 #include "shared/text_token_constants.h"
@@ -398,6 +400,162 @@ void TestCssSpacingNearBottomAdvancesScreen() {
   ExpectTrue("css-spacing-bottom: advanced to next screen", p.screen == 1);
 }
 
+void TestCssTopOneLineSpacingNearBottomAdvancesScreen() {
+  // Regression: CSS paragraph-top spacing that resolves to one line can leave
+  // opt=1 with advance_ok=0. Near the bottom this must advance the screen,
+  // not collapse to emit_opt=0.
+  TestCtx tc;
+  Book book(tc.ctx);
+  parsedata_t p = MakeParseData(tc, book);
+
+  p.buflen = 1;
+  p.buf[0] = 'A';
+  p.linebegan = false;
+  p.current_screen_has_drawable_content = true;
+  p.pending_block_break = true;
+  p.pending_block_spacing_lf = 1;
+  p.pending_block_spacing_reason = "paragraph-top";
+  p.pending_block_spacing_from_css = true;
+  p.pending_block_spacing_advance_ok = false;
+  p.screen = 0;
+
+  const int line_step = tc.text.GetHeight() + tc.text.linespacing;
+  const int compact_bottom =
+      text_render_layout_utils::ResolveCompactReadingBottomMargin(tc.text.margin.bottom);
+  const int max_height = screen_dims::kTopScreenHeightPx;
+  const int target_usable = line_step; // exactly one line available
+  p.pen.y = max_height - compact_bottom - target_usable;
+
+  book_xml_screen_advance::FlushPendingBlockSpacingBeforeContent(&p, "p");
+
+  ExpectTrue("css-top-one-line: advanced to next screen", p.screen == 1);
+}
+
+void TestInlineImageMarksScreenAsDrawableContent() {
+  TestCtx tc;
+  Book book(tc.ctx);
+  parsedata_t p = MakeParseData(tc, book);
+
+  InlineImageMetadata meta{};
+  meta.ok = true;
+  meta.width = 1920;
+  meta.height = 1231;
+
+  InlineImageLayoutPlan plan{};
+  plan.mode = INLINE_IMAGE_LAYOUT_BAND;
+  plan.draw_width = 216;
+  plan.draw_height = 138;
+  plan.line_break_before = false;
+  plan.advance_before = false;
+  plan.consume_rest_of_screen = false;
+  plan.vertical_space_after_draw = 139;
+  plan.next_text_screen = 0;
+  plan.page_breaks = 0;
+  ConfigureBookInlineImageStub(meta, plan, true);
+
+  p.docpath = "OPS/chapter.xhtml";
+  p.pen.x = tc.text.margin.left;
+  p.pen.y = tc.text.margin.top + tc.text.GetHeight();
+  p.linebegan = false;
+  p.current_screen_has_drawable_content = false;
+
+  const char *attr[] = {"src", "images/pg11a.jpg", nullptr};
+  epub_css_class_map::CssClassMargins elem_css{};
+  ImageHandlerFns fns{};
+  fns.linefeed = [](parsedata_t *pd) {
+    book_xml_screen_advance::Linefeed(pd);
+  };
+  fns.advance_screen = [](parsedata_t *pd) {
+    book_xml_screen_advance::AdvanceParsedScreen(pd);
+  };
+  fns.advance_page_overflow = [](parsedata_t *pd, int lh) {
+    book_xml_screen_advance::AdvanceParsedPageOnOverflow(pd, lh);
+  };
+  fns.emit_chardata = [](parsedata_t *pd, const char *txt, int len) {
+    xml::book::chardata(pd, txt, len);
+  };
+
+  HandleInlineImageStart(&p, &tc.text, attr, elem_css, fns);
+
+  ExpectTrue("image-drawable: image token emitted",
+             BufContains(p.buf, p.buflen, TEXT_IMAGE));
+  ExpectTrue("image-drawable: screen marked non-empty after band image",
+             p.current_screen_has_drawable_content);
+
+  ResetBookInlineImageStubState();
+}
+
+void TestPostImageCssSpacingFlushesNearBottom() {
+  // Regression guard: after a BAND image on the current screen, CSS pending
+  // spacing for the next paragraph must still flush near bottom-of-screen.
+  // Without drawable-content tracking from image emission, Phase 2 is skipped.
+  TestCtx tc;
+  Book book(tc.ctx);
+  parsedata_t p = MakeParseData(tc, book);
+
+  InlineImageMetadata meta{};
+  meta.ok = true;
+  meta.width = 1920;
+  meta.height = 1231;
+
+  InlineImageLayoutPlan plan{};
+  plan.mode = INLINE_IMAGE_LAYOUT_BAND;
+  plan.draw_width = 216;
+  plan.draw_height = 32;
+  plan.line_break_before = false;
+  plan.advance_before = false;
+  plan.consume_rest_of_screen = false;
+  plan.vertical_space_after_draw = 0;
+  plan.next_text_screen = 0;
+  plan.page_breaks = 0;
+  ConfigureBookInlineImageStub(meta, plan, true);
+
+  p.docpath = "OPS/chapter.xhtml";
+  p.screen = 0;
+  p.linebegan = false;
+  p.current_screen_has_drawable_content = false;
+
+  const int line_step = tc.text.GetHeight() + tc.text.linespacing;
+  const int compact_bottom =
+      text_render_layout_utils::ResolveCompactReadingBottomMargin(
+          tc.text.margin.bottom);
+  const int max_height = screen_dims::kTopScreenHeightPx;
+  const int target_usable = 3 * line_step;
+  p.pen.x = tc.text.margin.left;
+  p.pen.y = max_height - compact_bottom - target_usable;
+
+  const char *img_attr[] = {"src", "images/pg11a.jpg", nullptr};
+  epub_css_class_map::CssClassMargins elem_css{};
+  ImageHandlerFns fns{};
+  fns.linefeed = [](parsedata_t *pd) {
+    book_xml_screen_advance::Linefeed(pd);
+  };
+  fns.advance_screen = [](parsedata_t *pd) {
+    book_xml_screen_advance::AdvanceParsedScreen(pd);
+  };
+  fns.advance_page_overflow = [](parsedata_t *pd, int lh) {
+    book_xml_screen_advance::AdvanceParsedPageOnOverflow(pd, lh);
+  };
+  fns.emit_chardata = [](parsedata_t *pd, const char *txt, int len) {
+    xml::book::chardata(pd, txt, len);
+  };
+
+  HandleInlineImageStart(&p, &tc.text, img_attr, elem_css, fns);
+  ExpectTrue("post-image-spacing: image marks screen as drawable",
+             p.current_screen_has_drawable_content);
+
+  const int pen_before_flush = p.pen.y;
+  const int screen_before_flush = p.screen;
+  book_xml_screen_advance::QueueBlockSpacingLines(
+      &p, 2, "p", "paragraph-top-css", true);
+  book_xml_screen_advance::FlushPendingBlockSpacingBeforeContent(&p, "text");
+
+  ExpectTrue("post-image-spacing: flush consumes queued CSS spacing",
+             p.pen.y > pen_before_flush || p.screen != screen_before_flush);
+
+  ResetBookInlineImageStubState();
+}
+
 void TestPageBreakBeforeAlwaysUsesHardBreak() {
   TestCtx tc;
   tc.paragraph_spacing = 0;
@@ -429,6 +587,9 @@ int main() {
   TestFontSizeRestoreAdjustsPenYAfterBlockImageOverflow();
   TestSuppressOnlyDoesNotCrossBlockFontScopeStart();
   TestCssSpacingNearBottomAdvancesScreen();
+  TestCssTopOneLineSpacingNearBottomAdvancesScreen();
+  TestInlineImageMarksScreenAsDrawableContent();
+  TestPostImageCssSpacingFlushesNearBottom();
   TestPageBreakBeforeAlwaysUsesHardBreak();
   printf("PASS: %d tests\n", g_pass);
   return 0;

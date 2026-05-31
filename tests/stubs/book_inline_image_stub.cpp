@@ -6,6 +6,30 @@
 #include "book/book.h"
 #include "book/inline_image_layout.h"
 
+#include "book_inline_image_stub_test_api.h"
+
+namespace {
+
+InlineImageMetadata g_stub_meta{};
+InlineImageLayoutPlan g_stub_plan{};
+bool g_stub_plan_result = false;
+
+} // namespace
+
+void ResetBookInlineImageStubState() {
+  g_stub_meta = InlineImageMetadata{};
+  g_stub_plan = InlineImageLayoutPlan{};
+  g_stub_plan_result = false;
+}
+
+void ConfigureBookInlineImageStub(const InlineImageMetadata &meta,
+                                  const InlineImageLayoutPlan &plan,
+                                  bool plan_result) {
+  g_stub_meta = meta;
+  g_stub_plan = plan;
+  g_stub_plan_result = plan_result;
+}
+
 u16 Book::RegisterInlineImage(const std::string &) { return 0; }
 u32 Book::GetInlineImageCount() const { return 0; }
 void Book::SetInlineImageFollowTextLines(u16, u8) {}
@@ -27,26 +51,22 @@ bool Book::LoadInlineImageSource(u16, std::vector<u8> *,
   return false;
 }
 bool Book::EnsureInlineImageMetadata(u16, InlineImageMetadata *out) {
-  if (out) { out->ok = false; out->width = 0; out->height = 0; }
-  return false;
+  if (out)
+    *out = g_stub_meta;
+  return g_stub_meta.ok;
 }
 bool Book::GetInlineImageMetadata(u16, InlineImageMetadata *out) {
-  if (out) { out->ok = false; out->width = 0; out->height = 0; }
-  return false;
+  if (out)
+    *out = g_stub_meta;
+  return g_stub_meta.ok;
 }
 bool Book::PlanInlineImageLayout(Text *, u16, int, int, int, bool,
                                  InlineImageContext,
                                  InlineImageLayoutPlan *plan,
                                  int) {
-  if (plan) {
-    plan->mode = INLINE_IMAGE_LAYOUT_INLINE;
-    plan->draw_width = 0; plan->draw_height = 0;
-    plan->line_break_before = false; plan->advance_before = false;
-    plan->consume_rest_of_screen = false;
-    plan->vertical_space_after_draw = 0;
-    plan->next_text_screen = 0; plan->page_breaks = 0;
-  }
-  return false;
+  if (plan)
+    *plan = g_stub_plan;
+  return g_stub_plan_result;
 }
 bool Book::DrawInlineImage(Text *, u16, const InlineImageLayoutPlan *, int,
                            u8) {

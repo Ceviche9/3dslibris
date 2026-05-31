@@ -16,6 +16,7 @@
 #include "book/inline_image_layout.h"
 #include "formats/common/epub_image_utils.h"
 #include "parse.h"
+#include "shared/debug_log.h"
 #include "ui/text.h"
 
 #include <algorithm>
@@ -24,6 +25,24 @@
 #include <vector>
 
 namespace {
+
+#ifndef EPUB_SPACING_TRACE
+#define EPUB_SPACING_TRACE 0
+#endif
+
+static const char *InlineImageLayoutModeToStringLocal(
+    InlineImageLayoutMode mode) {
+  switch (mode) {
+  case INLINE_IMAGE_LAYOUT_INLINE:
+    return "inline";
+  case INLINE_IMAGE_LAYOUT_BAND:
+    return "band";
+  case INLINE_IMAGE_LAYOUT_PAGE:
+    return "page";
+  default:
+    return "unknown";
+  }
+}
 
 static bool EqualsAsciiNoCaseLocal(const char *a, const char *b) {
   if (!a || !b)
@@ -241,6 +260,21 @@ void HandleInlineImageStart(parsedata_t *p, Text *ts, const char **attr,
       ApplyFloatImageLayoutOverride(&image_plan, p->linebegan,
                                     ts->linespacing);
 
+  #if defined(DSLIBRIS_DEBUG) && EPUB_SPACING_TRACE
+    DBG_LOGF_CAT(
+      p->book->GetStatusReporter(), DBG_LEVEL_DEBUG, DBG_CAT_EPUB,
+      "SPTRACE IMG plan mode=%s scr=%d pen=(%d,%d) lb=%d vis=%d adv=%d lbf=%d "
+      "vspace=%d draw=%dx%d maxw=%d src=%s",
+      InlineImageLayoutModeToStringLocal(image_plan.mode), p->screen,
+      p->pen.x, p->pen.y, p->linebegan ? 1 : 0,
+      p->current_screen_has_drawable_content ? 1 : 0,
+      image_plan.advance_before ? 1 : 0,
+      image_plan.line_break_before ? 1 : 0,
+      image_plan.vertical_space_after_draw, image_plan.draw_width,
+      image_plan.draw_height, author_max_w,
+      resolved.empty() ? "-" : resolved.c_str());
+  #endif
+
     InlineImageMetadata img_meta{};
     p->book->GetInlineImageMetadata(image_id, &img_meta);
     if (!img_meta.ok && image_plan.mode == INLINE_IMAGE_LAYOUT_PAGE &&
@@ -279,6 +313,16 @@ void HandleInlineImageStart(parsedata_t *p, Text *ts, const char **attr,
     }
     parse_append_page_byte(p, TEXT_IMAGE);
     parse_append_page_byte(p, (u32)image_id);
+    p->current_screen_has_drawable_content = true;
+
+  #if defined(DSLIBRIS_DEBUG) && EPUB_SPACING_TRACE
+    DBG_LOGF_CAT(
+      p->book->GetStatusReporter(), DBG_LEVEL_DEBUG, DBG_CAT_EPUB,
+      "SPTRACE IMG emit mode=%s scr=%d pen=(%d,%d) lb=%d vis=%d",
+      InlineImageLayoutModeToStringLocal(image_plan.mode), p->screen,
+      p->pen.x, p->pen.y, p->linebegan ? 1 : 0,
+      p->current_screen_has_drawable_content ? 1 : 0);
+  #endif
 
     switch (image_plan.mode) {
     case INLINE_IMAGE_LAYOUT_INLINE:
@@ -295,6 +339,13 @@ void HandleInlineImageStart(parsedata_t *p, Text *ts, const char **attr,
       p->pen.y += image_plan.vertical_space_after_draw;
       p->linebegan = false;
       fns.advance_page_overflow(p, ts->GetHeight());
+    #if defined(DSLIBRIS_DEBUG) && EPUB_SPACING_TRACE
+        DBG_LOGF_CAT(
+          p->book->GetStatusReporter(), DBG_LEVEL_DEBUG, DBG_CAT_EPUB,
+          "SPTRACE IMG band-after-overflow scr=%d pen=(%d,%d) lb=%d vis=%d",
+          p->screen, p->pen.x, p->pen.y, p->linebegan ? 1 : 0,
+          p->current_screen_has_drawable_content ? 1 : 0);
+    #endif
       if (img_style) {
         const int line_h = ts->GetHeight() + ts->linespacing;
         const book_xml_css_style_utils::MarginTopResult mbr =
@@ -302,6 +353,13 @@ void HandleInlineImageStart(parsedata_t *p, Text *ts, const char **attr,
         const int lf_count =
             book_xml_parser_style_utils::ResolveBlockBottomLinefeeds(
                 0, mbr, line_h);
+    #if defined(DSLIBRIS_DEBUG) && EPUB_SPACING_TRACE
+        DBG_LOGF_CAT(
+          p->book->GetStatusReporter(), DBG_LEVEL_DEBUG, DBG_CAT_EPUB,
+          "SPTRACE IMG band-margin-bottom lf=%d scr=%d pen_y=%d vis=%d",
+          lf_count, p->screen, p->pen.y,
+          p->current_screen_has_drawable_content ? 1 : 0);
+    #endif
         for (int i = 0; i < lf_count; i++)
           fns.linefeed(p);
       }

@@ -689,6 +689,27 @@ bool Book::EnsureInlineImageMetadata(u16 image_id, InlineImageMetadata *out) {
       bool have_info =
           stbi_info_from_memory(compressed.data(), (int)compressed.size(),
                                 &info_w, &info_h, &info_c) != 0;
+
+      // Some EPUB images keep SOF markers beyond the small ZIP prefix probe.
+      // If lightweight info probing fails, retry once with the full source so
+      // layout gets real dimensions instead of falling back to PAGE mode.
+      if ((!have_info || info_w <= 0 || info_h <= 0) && !already_loaded_full &&
+          image_path.compare(0, 14, "mobi:recindex:") != 0) {
+        std::vector<u8> full_source;
+        std::string full_resolved_path;
+        if (LoadInlineImageSource(image_id, &full_source, &full_resolved_path) &&
+            !full_source.empty()) {
+          compressed.swap(full_source);
+          have_info = stbi_info_from_memory(compressed.data(),
+                                            (int)compressed.size(), &info_w,
+                                            &info_h, &info_c) != 0;
+          if (!full_resolved_path.empty() &&
+              full_resolved_path.compare(0, 5, "data:") != 0) {
+            resolved_path = full_resolved_path;
+          }
+        }
+      }
+
       if ((!have_info || info_w <= 0 || info_h <= 0) &&
           image_path.compare(0, 14, "mobi:recindex:") == 0) {
         // Some MOBI photo records decode fine but fail the lightweight probe.

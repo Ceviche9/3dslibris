@@ -16,8 +16,14 @@
 #include "shared/text_render_layout_utils.h"
 #include "ui/text.h"
 
+#include <cstring>
+
 #ifndef BLOCK_SPACING_TRACE
 #define BLOCK_SPACING_TRACE 0
+#endif
+
+#ifndef EPUB_SPACING_TRACE
+#define EPUB_SPACING_TRACE 0
 #endif
 
 namespace {
@@ -207,6 +213,16 @@ void QueueBlockSpacingLines(parsedata_t *p, int lines, const char *tag,
     p->pending_block_spacing_advance_ok = true;
   else if (!from_css)
     p->pending_block_spacing_advance_ok = false;
+#if defined(DSLIBRIS_DEBUG) && EPUB_SPACING_TRACE
+  if (from_css) {
+    DBG_LOGF_CAT(
+        p->book->GetStatusReporter(), DBG_LEVEL_DEBUG, DBG_CAT_EPUB,
+        "SPTRACE QUEUE tag=%s reason=%s lines=%d opt=%d css=1 pen_y=%d lb=%d scr=%d vis=%d",
+        tag ? tag : "?", reason ? reason : "?", lines,
+        p->pending_block_spacing_lf, p->pen.y, p->linebegan ? 1 : 0,
+        p->screen, p->current_screen_has_drawable_content ? 1 : 0);
+  }
+#endif
 #if defined(DSLIBRIS_DEBUG) && BLOCK_SPACING_TRACE
   DBG_LOGF(p->book->GetStatusReporter(),
     "Queue[%s/%s] lines=%d opt=%d->%d from_css=%d pen_y=%d lb=%d",
@@ -370,12 +386,15 @@ void FlushPendingBlockSpacingBeforeContent(parsedata_t *p,
   const int opt = p->pending_block_spacing_lf;
   const bool css_sourced = p->pending_block_spacing_from_css;
   const bool advance_ok = p->pending_block_spacing_advance_ok;
+  const bool css_top_spacing =
+      css_sourced && p->pending_block_spacing_reason &&
+      std::strstr(p->pending_block_spacing_reason, "paragraph-top") != NULL;
   int emit_opt = 0;
   if (opt > 0 && !IsCurrentReadingScreenVisuallyEmpty(p)) {
     const int required = 2;
     if (opt + required <= available) {
       emit_opt = opt;
-    } else if (css_sourced && advance_ok) {
+    } else if (css_sourced && (advance_ok || css_top_spacing)) {
       // CSS-mandated spacing can't coexist with a content line on this screen.
       // Advance to the next screen; the screen break already separates blocks.
 #if defined(DSLIBRIS_DEBUG)
@@ -399,7 +418,26 @@ void FlushPendingBlockSpacingBeforeContent(parsedata_t *p,
     }
     for (int i = 0; i < emit_opt; i++)
       LinefeedRLocal(p, next_tag ? next_tag : "?", "pending-spacing", 0);
+  } else if (opt > 0 && IsCurrentReadingScreenVisuallyEmpty(p)) {
+#if defined(DSLIBRIS_DEBUG) && EPUB_SPACING_TRACE
+    DBG_LOGF_CAT(
+        p->book->GetStatusReporter(), DBG_LEVEL_DEBUG, DBG_CAT_EPUB,
+        "SPTRACE FLUSH skip-empty tag=%s opt=%d css=%d adv_ok=%d pen_y=%d lb=%d scr=%d vis=%d",
+        next_tag ? next_tag : "?", opt, css_sourced ? 1 : 0,
+        advance_ok ? 1 : 0, p->pen.y, p->linebegan ? 1 : 0, p->screen,
+        p->current_screen_has_drawable_content ? 1 : 0);
+#endif
   }
+#if defined(DSLIBRIS_DEBUG) && EPUB_SPACING_TRACE
+  if (opt > 0) {
+    DBG_LOGF_CAT(
+        p->book->GetStatusReporter(), DBG_LEVEL_DEBUG, DBG_CAT_EPUB,
+        "SPTRACE FLUSH done tag=%s opt=%d emit_opt=%d css=%d adv_ok=%d pen_y=%d lb=%d scr=%d vis=%d",
+        next_tag ? next_tag : "?", opt, emit_opt, css_sourced ? 1 : 0,
+        advance_ok ? 1 : 0, p->pen.y, p->linebegan ? 1 : 0, p->screen,
+        p->current_screen_has_drawable_content ? 1 : 0);
+  }
+#endif
 #if defined(DSLIBRIS_DEBUG) && FLUSHPENDING_TRACE
   DBG_LOGF(p->book->GetStatusReporter(),
     "FlushPending EXIT[->%s] opt=%d avail=%d emit_opt=%d pen_y=%d scr=%d lb=%d",
