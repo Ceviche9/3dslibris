@@ -358,26 +358,33 @@ void FlushPendingBlockSpacingBeforeContent(parsedata_t *p,
 
   // ---- Phase 1: mandatory block break -----------------------------------
   if (p->pending_block_break && p->linebegan) {
-    // When spacing originates from explicit CSS margins, avoid squeezing the
-    // visual separation into the last remaining line at the bottom edge.
-    // Advancing keeps paragraph rhythm consistent with paged readers.
-    const int min_available = p->pending_block_spacing_from_css ? 2 : 1;
-    if (available >= min_available) {
-      LinefeedRLocal(p, next_tag ? next_tag : "?", "mandatory-break", 0);
-      available--;
-    } else {
-      AdvanceParsedScreen(p);
+    // Only emit the mandatory break when there is visible content on screen.
+    // When the screen is visually empty (e.g. after a text-overflow advance
+    // that left no drawable characters on the new screen), the screen break
+    // itself already provides the visual separation between blocks.  An extra
+    // linefeed here would produce blank space at the very top of the screen.
+    if (!IsCurrentReadingScreenVisuallyEmpty(p)) {
+      // When spacing originates from explicit CSS margins, avoid squeezing the
+      // visual separation into the last remaining line at the bottom edge.
+      // Advancing keeps paragraph rhythm consistent with paged readers.
+      const int min_available = p->pending_block_spacing_from_css ? 2 : 1;
+      if (available >= min_available) {
+        LinefeedRLocal(p, next_tag ? next_tag : "?", "mandatory-break", 0);
+        available--;
+      } else {
+        AdvanceParsedScreen(p);
 
-      const text_render_layout_utils::ReadingScreenMetrics after_metrics =
-          text_render_layout_utils::ResolveReadingScreenMetricsForReadingScreen(
-              p->book->GetOrientation() != 0,
-              p->screen,
-              ts->margin.bottom,
-              text_render_layout_utils::ResolveCompactReadingBottomMargin(ts->margin.bottom));
+        const text_render_layout_utils::ReadingScreenMetrics after_metrics =
+            text_render_layout_utils::ResolveReadingScreenMetricsForReadingScreen(
+                p->book->GetOrientation() != 0,
+                p->screen,
+                ts->margin.bottom,
+                text_render_layout_utils::ResolveCompactReadingBottomMargin(ts->margin.bottom));
 
-      const int usable_after =
-          after_metrics.max_height - after_metrics.bottom_margin - p->pen.y;
-      available = (usable_after > 0) ? (usable_after / line_step) : 0;
+        const int usable_after =
+            after_metrics.max_height - after_metrics.bottom_margin - p->pen.y;
+        available = (usable_after > 0) ? (usable_after / line_step) : 0;
+      }
     }
   }
   p->pending_block_break = false;
