@@ -210,7 +210,7 @@ void HandleInlineImageStart(parsedata_t *p, Text *ts, const char **attr,
     const int line_h = ts->GetHeight() + ts->linespacing;
     const book_xml_css_style_utils::MarginTopResult mtr =
         book_xml_css_style_utils::ParseMarginTop(img_style);
-    const int default_lf = !BlankLineLocal(p) ? 1 : 0;
+    const int default_lf = 0;
     const int lf_count =
         book_xml_parser_style_utils::ResolveBlockTopLinefeeds(default_lf,
                                                               mtr, line_h);

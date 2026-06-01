@@ -485,6 +485,66 @@ void TestInlineImageMarksScreenAsDrawableContent() {
   ResetBookInlineImageStubState();
 }
 
+void TestStyledBandImageWithoutMarginTopDoesNotAddDefaultTopSpace() {
+  // Regression: a BAND image with a style attribute but no margin-top was
+  // receiving a default top linefeed when another image preceded it. That extra
+  // line accumulated in image-heavy spine pages and pushed following text to
+  // the next screen.
+  TestCtx tc;
+  Book book(tc.ctx);
+  parsedata_t p = MakeParseData(tc, book);
+
+  InlineImageMetadata meta{};
+  meta.ok = true;
+  meta.width = 194;
+  meta.height = 8;
+
+  InlineImageLayoutPlan plan{};
+  plan.mode = INLINE_IMAGE_LAYOUT_BAND;
+  plan.draw_width = 194;
+  plan.draw_height = 8;
+  plan.line_break_before = false;
+  plan.advance_before = false;
+  plan.consume_rest_of_screen = false;
+  plan.vertical_space_after_draw = 8;
+  plan.next_text_screen = 0;
+  plan.page_breaks = 0;
+  ConfigureBookInlineImageStub(meta, plan, true);
+
+  p.docpath = "OPS/chapter.xhtml";
+  p.pen.x = tc.text.margin.left;
+  p.pen.y = 100;
+  p.linebegan = false;
+  p.current_screen_has_drawable_content = true;
+  parse_append_page_byte(&p, 'x');
+  parse_append_page_byte(&p, TEXT_IMAGE);
+  parse_append_page_byte(&p, 99);
+
+  const char *attr[] = {"src", "images/pg18a.jpg", "style", "width:80%",
+                        nullptr};
+  epub_css_class_map::CssClassMargins elem_css{};
+  ImageHandlerFns fns{};
+  fns.linefeed = [](parsedata_t *pd) {
+    book_xml_screen_advance::Linefeed(pd);
+  };
+  fns.advance_screen = [](parsedata_t *pd) {
+    book_xml_screen_advance::AdvanceParsedScreen(pd);
+  };
+  fns.advance_page_overflow = [](parsedata_t *pd, int lh) {
+    book_xml_screen_advance::AdvanceParsedPageOnOverflow(pd, lh);
+  };
+  fns.emit_chardata = [](parsedata_t *pd, const char *txt, int len) {
+    xml::book::chardata(pd, txt, len);
+  };
+
+  HandleInlineImageStart(&p, &tc.text, attr, elem_css, fns);
+
+  ExpectTrue("styled-band-no-margin-top: no default top linefeed",
+             p.pen.y == 108);
+
+  ResetBookInlineImageStubState();
+}
+
 void TestPostImageCssSpacingFlushesNearBottom() {
   // Regression guard: after a BAND image on the current screen, CSS pending
   // spacing for the next paragraph must still flush near bottom-of-screen.
@@ -589,6 +649,7 @@ int main() {
   TestCssSpacingNearBottomAdvancesScreen();
   TestCssTopOneLineSpacingNearBottomAdvancesScreen();
   TestInlineImageMarksScreenAsDrawableContent();
+  TestStyledBandImageWithoutMarginTopDoesNotAddDefaultTopSpace();
   TestPostImageCssSpacingFlushesNearBottom();
   TestPageBreakBeforeAlwaysUsesHardBreak();
   printf("PASS: %d tests\n", g_pass);
