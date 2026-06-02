@@ -5,6 +5,7 @@
 namespace text_render_layout_utils {
 
 static const int kFullReadingScreenFooterGuardPx = 8;
+static const int kCompactScreenBaselineBleedPx = 2;
 
 // Returns the pixel height of a reading screen by its 0-based index.
 // Screen 0 is the first/left screen (400 px); screen 1 is the second/right
@@ -87,9 +88,10 @@ inline bool CurrentLineFitsScreen(int pen_y, int line_height,
                                   int bottom_margin) {
   (void)line_height;
   (void)line_spacing;
-  static const int kCompactScreenBaselineBleedPx = 2;
   const int visual_bottom_margin =
-      (bottom_margin <= 16)
+      (bottom_margin > 36)
+          ? std::max(0, bottom_margin - kFullReadingScreenFooterGuardPx)
+          : (bottom_margin <= 16)
           ? std::max(0, bottom_margin - kCompactScreenBaselineBleedPx)
           : bottom_margin;
   return pen_y <= (max_height - visual_bottom_margin);
@@ -97,7 +99,11 @@ inline bool CurrentLineFitsScreen(int pen_y, int line_height,
 
 inline bool CurrentLineBeyondReadingScreen(int pen_y, int max_height,
                                            int bottom_margin) {
-  return pen_y > (max_height - bottom_margin);
+  const int visual_bottom_margin =
+      (bottom_margin > 36)
+          ? std::max(0, bottom_margin - kFullReadingScreenFooterGuardPx)
+          : bottom_margin;
+  return pen_y > (max_height - visual_bottom_margin);
 }
 
 inline bool ShouldAdvanceAfterBandImage(int pen_y, int max_height,

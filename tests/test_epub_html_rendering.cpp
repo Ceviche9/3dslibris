@@ -1,9 +1,11 @@
 #include "book/book.h"
 #include "book/book_context.h"
 #include "book/book_xml.h"
+#include "book/book_xml_block_handler.h"
 #include "book/book_xml_flow_emission.h"
 #include "book/book_xml_image_handler.h"
 #include "book/book_xml_screen_advance.h"
+#include "book/book_xml_text_emit.h"
 #include "book/page.h"
 #include "book_inline_image_stub_test_api.h"
 #include "formats/common/xml_parse_utils.h"
@@ -39,6 +41,15 @@ void ExpectFalse(const char *label, bool v) {
   g_pass++;
 }
 
+void ExpectIntEq(const char *label, int actual, int expected) {
+  if (actual != expected) {
+    fprintf(stderr, "FAIL %s: expected %d got %d\n", label, expected, actual);
+    g_fail++;
+    std::exit(1);
+  }
+  g_pass++;
+}
+
 bool BufContains(const u32 *buf, int len, u32 value) {
   for (int i = 0; i < len; i++)
     if (buf[i] == value)
@@ -52,6 +63,10 @@ int CountBufValue(const u32 *buf, int len, u32 value) {
     if (buf[i] == value)
       count++;
   return count;
+}
+
+int TestMeasureCodepoint(uint32_t codepoint, void *) {
+  return codepoint == ' ' ? 4 : 7;
 }
 
 struct TestCtx {
@@ -389,21 +404,174 @@ void TestCssSpacingNearBottomAdvancesScreen() {
   p.screen = 0;
 
   const int line_step = tc.text.GetHeight() + tc.text.linespacing;
-  const int compact_bottom =
-      text_render_layout_utils::ResolveCompactReadingBottomMargin(tc.text.margin.bottom);
-  const int max_height = screen_dims::kTopScreenHeightPx;
-  const int target_usable = line_step; // exactly one line available
-  p.pen.y = max_height - compact_bottom - target_usable;
+  const text_render_layout_utils::ReadingScreenMetrics metrics =
+      text_render_layout_utils::ResolveReadingScreenMetricsForReadingScreen(
+          false, 0, tc.text.margin.bottom,
+          text_render_layout_utils::ResolveCompactReadingBottomMargin(
+              tc.text.margin.bottom));
+  (void)line_step;
+  p.pen.y = metrics.max_height - metrics.bottom_margin;
 
   book_xml_screen_advance::FlushPendingBlockSpacingBeforeContent(&p, "p");
 
   ExpectTrue("css-spacing-bottom: advanced to next screen", p.screen == 1);
 }
 
-void TestCssTopOneLineSpacingNearBottomAdvancesScreen() {
-  // Regression: CSS paragraph-top spacing that resolves to one line can leave
-  // opt=1 with advance_ok=0. Near the bottom this must advance the screen,
-  // not collapse to emit_opt=0.
+void TestOverflowContinuationKeepsParagraphBoundary() {
+  // Regression from real EPUB trace: text overflow can leave the parser on
+  // the next screen with linebegan=true but current_screen_has_drawable_content
+  // still false.  That screen is not truly empty; the next paragraph must emit
+  // a boundary instead of joining labels as "blackAbilities" or "tailsQueen".
+  TestCtx tc;
+  Book book(tc.ctx);
+  parsedata_t p = MakeParseData(tc, book);
+
+  p.buflen = 16;
+  p.buf[0] = TEXT_SCREEN_BREAK;
+  p.linebegan = true;
+  p.current_screen_has_drawable_content = false;
+  p.pending_block_break = true;
+  p.pending_block_spacing_lf = 1;
+  p.pending_block_spacing_reason = "paragraph-top";
+  p.pending_block_spacing_from_css = true;
+  p.pending_block_spacing_advance_ok = false;
+  p.screen = 1;
+  p.pen.y = 66;
+
+  book_xml_screen_advance::FlushPendingBlockSpacingBeforeContent(&p, "text");
+
+  ExpectIntEq("overflow-continuation-boundary: stays on right screen",
+              p.screen, 1);
+  ExpectTrue("overflow-continuation-boundary: emits paragraph boundary",
+             p.pen.y > 66);
+}
+
+void TestTextOverflowMarksNextScreenAsDrawable() {
+  // Real Wings trace: a text segment can advance from the full-height left
+  // screen to the compact right screen before it is emitted. The fresh right
+  // screen must be marked non-empty after that emission, otherwise the next
+  // paragraph treats it as top-of-page and drops CSS top spacing.
+  TestCtx tc;
+  Book book(tc.ctx);
+  parsedata_t p = MakeParseData(tc, book);
+
+  p.screen = 0;
+  p.pen.x = tc.text.margin.left;
+  p.pen.y = 365;
+  p.linebegan = false;
+  p.current_screen_has_drawable_content = false;
+
+  const char text[] = "Wars";
+  std::vector<text_layout_utils::ShapedGlyph> run;
+  bool has_rtl = false;
+  ExpectTrue("text-overflow-drawable: shape text",
+             text_layout_utils::ShapeTextRunUtf8(
+                 text, strlen(text), nullptr, TestMeasureCodepoint, nullptr,
+                 &run, &has_rtl));
+
+  book_xml_text_emit::FlowEmitMetrics metrics{};
+  metrics.display_width = 240;
+  metrics.base_margin_left = tc.text.margin.left;
+  metrics.margin_left = tc.text.margin.left;
+  metrics.margin_right = tc.text.margin.right;
+  metrics.lineheight = tc.text.GetHeight();
+  metrics.linespacing = tc.text.linespacing;
+  metrics.spaceadvance = TestMeasureCodepoint(' ', nullptr);
+  metrics.text_already_transformed = false;
+  metrics.screen_max_height = 400;
+  metrics.screen_bottom_margin =
+      tc.text.margin.bottom +
+      text_render_layout_utils::kFullReadingScreenFooterGuardPx;
+  metrics.overflow_threshold =
+      metrics.screen_max_height - metrics.screen_bottom_margin;
+  metrics.text_indent_px = 0;
+
+  book_xml_text_emit::EmitFlowedShapedText(
+      &p, text, run, false, std::vector<text_bidi_utils::BidiRun>(),
+      metrics,
+      [](parsedata_t *pd, int lh, void *) {
+        book_xml_screen_advance::AdvanceParsedPageOnOverflow(pd, lh);
+      },
+      nullptr);
+
+  ExpectIntEq("text-overflow-drawable: advanced to right screen", p.screen, 1);
+  ExpectTrue("text-overflow-drawable: emitted visible text",
+             p.linebegan);
+  ExpectTrue("text-overflow-drawable: marks right screen non-empty",
+             p.current_screen_has_drawable_content);
+}
+
+void TestCssTopSpacingKeepsRenderableSlotsAtKnownPens() {
+  const int pens[] = {291, 320, 322, 333, 346};
+  for (int i = 0; i < 5; i++) {
+    TestCtx tc;
+    Book book(tc.ctx);
+    parsedata_t p = MakeParseData(tc, book);
+
+    p.buflen = 1;
+    p.buf[0] = 'A';
+    p.linebegan = false;
+    p.current_screen_has_drawable_content = true;
+    p.pending_block_break = true;
+    p.pending_block_spacing_lf = 1;
+    p.pending_block_spacing_reason = "paragraph-top";
+    p.pending_block_spacing_from_css = true;
+    p.pending_block_spacing_advance_ok = false;
+    p.screen = 0;
+    p.pen.y = pens[i];
+
+    book_xml_screen_advance::FlushPendingBlockSpacingBeforeContent(&p, "p");
+
+    char label[96];
+    snprintf(label, sizeof(label), "css-top-known-pen-%d: stays on screen",
+             pens[i]);
+    ExpectIntEq(label, p.screen, 0);
+    if (pens[i] == 291 || pens[i] == 320 || pens[i] == 322 ||
+        pens[i] == 333) {
+      snprintf(label, sizeof(label), "css-top-known-pen-%d: emits spacing",
+               pens[i]);
+      ExpectIntEq(label, p.pen.y, pens[i] + tc.text.GetHeight() +
+                                      tc.text.linespacing);
+    } else if (pens[i] == 346) {
+      snprintf(label, sizeof(label), "css-top-known-pen-%d: collapses spacing",
+               pens[i]);
+      ExpectIntEq(label, p.pen.y, pens[i]);
+    }
+  }
+}
+
+void TestCssTopSpacingPreservesVisualParagraphGapNearBottom() {
+  // Wings tribe pages use .contentsentry { margin-top: 1% }. After the image
+  // and separator fixes, that one-line CSS gap should be preserved whenever it
+  // still leaves room for at least two renderable content baselines.
+  TestCtx tc;
+  Book book(tc.ctx);
+  parsedata_t p = MakeParseData(tc, book);
+
+  p.buflen = 1;
+  p.buf[0] = 'A';
+  p.linebegan = false;
+  p.current_screen_has_drawable_content = true;
+  p.pending_block_break = true;
+  p.pending_block_spacing_lf = 1;
+  p.pending_block_spacing_reason = "paragraph-top";
+  p.pending_block_spacing_from_css = true;
+  p.pending_block_spacing_advance_ok = false;
+  p.screen = 0;
+  p.pen.y = 316;
+
+  book_xml_screen_advance::FlushPendingBlockSpacingBeforeContent(&p, "p");
+
+  ExpectIntEq("css-top-visual-gap: stays on left screen", p.screen, 0);
+  ExpectIntEq("css-top-visual-gap: emits one-line publisher spacing",
+              p.pen.y, 316 + tc.text.GetHeight() + tc.text.linespacing);
+}
+
+void TestCssTopOneLineSpacingNearBottomKeepsTwoRenderableLines() {
+  // Regression: FlushPending used floor((limit - pen_y) / line_step), which
+  // under-counted the current baseline. At pen_y=333 with a 356px guarded
+  // bottom limit and a 13px step, the renderer can still draw at 333 and 346,
+  // so CSS paragraph-top spacing should collapse instead of advancing.
   TestCtx tc;
   Book book(tc.ctx);
   parsedata_t p = MakeParseData(tc, book);
@@ -420,15 +588,18 @@ void TestCssTopOneLineSpacingNearBottomAdvancesScreen() {
   p.screen = 0;
 
   const int line_step = tc.text.GetHeight() + tc.text.linespacing;
-  const int compact_bottom =
-      text_render_layout_utils::ResolveCompactReadingBottomMargin(tc.text.margin.bottom);
-  const int max_height = screen_dims::kTopScreenHeightPx;
-  const int target_usable = line_step; // exactly one line available
-  p.pen.y = max_height - compact_bottom - target_usable;
+  const text_render_layout_utils::ReadingScreenMetrics metrics =
+      text_render_layout_utils::ResolveReadingScreenMetricsForReadingScreen(
+          false, 0, tc.text.margin.bottom,
+          text_render_layout_utils::ResolveCompactReadingBottomMargin(
+              tc.text.margin.bottom));
+  p.pen.y = metrics.max_height - metrics.bottom_margin - line_step;
 
   book_xml_screen_advance::FlushPendingBlockSpacingBeforeContent(&p, "p");
 
-  ExpectTrue("css-top-one-line: advanced to next screen", p.screen == 1);
+  ExpectTrue("css-top-one-line: stays on current screen", p.screen == 0);
+  ExpectTrue("css-top-one-line: preserves two baseline slots",
+             p.pen.y == metrics.max_height - metrics.bottom_margin - line_step);
 }
 
 void TestInlineImageMarksScreenAsDrawableContent() {
@@ -576,13 +747,14 @@ void TestPostImageCssSpacingFlushesNearBottom() {
   p.current_screen_has_drawable_content = false;
 
   const int line_step = tc.text.GetHeight() + tc.text.linespacing;
-  const int compact_bottom =
-      text_render_layout_utils::ResolveCompactReadingBottomMargin(
-          tc.text.margin.bottom);
-  const int max_height = screen_dims::kTopScreenHeightPx;
-  const int target_usable = 3 * line_step;
+  const text_render_layout_utils::ReadingScreenMetrics metrics =
+      text_render_layout_utils::ResolveReadingScreenMetricsForReadingScreen(
+          false, 0, tc.text.margin.bottom,
+          text_render_layout_utils::ResolveCompactReadingBottomMargin(
+              tc.text.margin.bottom));
+  const int target_usable = line_step;
   p.pen.x = tc.text.margin.left;
-  p.pen.y = max_height - compact_bottom - target_usable;
+  p.pen.y = metrics.max_height - metrics.bottom_margin - target_usable;
 
   const char *img_attr[] = {"src", "images/pg11a.jpg", nullptr};
   epub_css_class_map::CssClassMargins elem_css{};
@@ -610,8 +782,175 @@ void TestPostImageCssSpacingFlushesNearBottom() {
       &p, 2, "p", "paragraph-top-css", true);
   book_xml_screen_advance::FlushPendingBlockSpacingBeforeContent(&p, "text");
 
-  ExpectTrue("post-image-spacing: flush consumes queued CSS spacing",
-             p.pen.y > pen_before_flush || p.screen != screen_before_flush);
+  ExpectIntEq("post-image-spacing: flush stays on current screen",
+              p.screen, screen_before_flush);
+  ExpectIntEq("post-image-spacing: flush collapses optional CSS spacing",
+              p.pen.y, pen_before_flush);
+
+  ResetBookInlineImageStubState();
+}
+
+void TestDecorativeBandImageSuppressesWrapperMargins() {
+  // Regression from Wings of Fire tribe pages: a thin title/separator image
+  // inside <p class="centerimage2"> inherited margin:10%, costing one line
+  // before and one line after the 10px ornament. The ornament itself is the
+  // separator; its wrapper margins must not consume paragraph slots.
+  TestCtx tc;
+  Book book(tc.ctx);
+  parsedata_t p = MakeParseData(tc, book);
+
+  InlineImageMetadata meta{};
+  meta.ok = true;
+  meta.width = 1200;
+  meta.height = 55;
+
+  InlineImageLayoutPlan plan{};
+  plan.mode = INLINE_IMAGE_LAYOUT_BAND;
+  plan.draw_width = 216;
+  plan.draw_height = 10;
+  plan.line_break_before = false;
+  plan.advance_before = false;
+  plan.consume_rest_of_screen = false;
+  plan.vertical_space_after_draw = 10;
+  plan.next_text_screen = 0;
+  plan.page_breaks = 0;
+  ConfigureBookInlineImageStub(meta, plan, true);
+
+  p.docpath = "OEBPS/Text/part0006.xhtml";
+  p.screen = 0;
+  p.in_paragraph = true;
+  p.paragraph_has_content = false;
+  p.linebegan = false;
+  p.current_screen_has_drawable_content = true;
+  p.pen.x = tc.text.margin.left;
+  p.pen.y = 225;
+  p.pending_block_break = true;
+  p.pending_block_spacing_lf = 1;
+  p.pending_block_spacing_reason = "paragraph-top";
+  p.pending_block_spacing_from_css = true;
+  p.pending_block_spacing_advance_ok = true;
+
+  const char *img_attr[] = {"src", "../Images/image00182.jpeg", nullptr};
+  epub_css_class_map::CssClassMargins elem_css{};
+  ImageHandlerFns fns{};
+  fns.linefeed = [](parsedata_t *pd) {
+    book_xml_screen_advance::Linefeed(pd);
+  };
+  fns.advance_screen = [](parsedata_t *pd) {
+    book_xml_screen_advance::AdvanceParsedScreen(pd);
+  };
+  fns.advance_page_overflow = [](parsedata_t *pd, int lh) {
+    book_xml_screen_advance::AdvanceParsedPageOnOverflow(pd, lh);
+  };
+  fns.emit_chardata = [](parsedata_t *pd, const char *txt, int len) {
+    xml::book::chardata(pd, txt, len);
+  };
+
+  HandleInlineImageStart(&p, &tc.text, img_attr, elem_css, fns);
+
+  ExpectIntEq("decorative-band: only consumes drawn separator height",
+              p.pen.y, 235);
+  ExpectFalse("decorative-band: wrapper paragraph remains non-content",
+              p.paragraph_has_content);
+  ExpectFalse("decorative-band: clears pending wrapper spacing",
+              p.pending_block_break);
+  ExpectIntEq("decorative-band: clears pending optional spacing",
+              p.pending_block_spacing_lf, 0);
+
+  ResetBookInlineImageStubState();
+}
+
+void TestBandImageSeparatorSequenceMatchesRenderedHeight() {
+  // Wings of Fire tribe pages use one paragraph for the dragon image, another
+  // for the title/separator image, then a text paragraph. The renderer consumes
+  // those two band image heights back-to-back, so parser state must do the same.
+  TestCtx tc;
+  tc.paragraph_spacing = 0;
+  Book book(tc.ctx);
+  parsedata_t p = MakeParseData(tc, book);
+  p.docpath = "OEBPS/Text/part0006.xhtml";
+  p.screen = 0;
+  p.pen.x = tc.text.margin.left;
+  p.pen.y = 24;
+
+  ImageHandlerFns fns{};
+  fns.linefeed = [](parsedata_t *pd) {
+    book_xml_screen_advance::Linefeed(pd);
+  };
+  fns.advance_screen = [](parsedata_t *pd) {
+    book_xml_screen_advance::AdvanceParsedScreen(pd);
+  };
+  fns.advance_page_overflow = [](parsedata_t *pd, int lh) {
+    book_xml_screen_advance::AdvanceParsedPageOnOverflow(pd, lh);
+  };
+  fns.emit_chardata = [](parsedata_t *pd, const char *txt, int len) {
+    xml::book::chardata(pd, txt, len);
+  };
+
+  epub_css_class_map::CssClassMargins elem_css{};
+  const char *image_p_attr[] = {"style", "margin:10% 0", nullptr};
+  const char *text_p_attr[] = {"style", "margin-top:1%;margin-bottom:0", nullptr};
+
+  InlineImageMetadata main_meta{};
+  main_meta.ok = true;
+  main_meta.width = 1200;
+  main_meta.height = 1040;
+  InlineImageLayoutPlan main_plan{};
+  main_plan.mode = INLINE_IMAGE_LAYOUT_BAND;
+  main_plan.draw_width = 216;
+  main_plan.draw_height = 187;
+  main_plan.vertical_space_after_draw = 187;
+  ConfigureBookInlineImageStub(main_meta, main_plan, true);
+
+  bool early = false;
+  book_xml_block_handler::HandleBlockElementStart(&p, &tc.text, "p",
+                                                  image_p_attr, elem_css, "",
+                                                  &early);
+  const char *main_img_attr[] = {"src", "../Images/image00181.jpeg", nullptr};
+  HandleInlineImageStart(&p, &tc.text, main_img_attr, elem_css, fns);
+  book_xml_block_handler::HandleBlockElementEnd(&p, &tc.text, "p");
+  parse_pop(&p);
+  ExpectIntEq("band-sequence: main image consumes only draw height", p.pen.y, 211);
+  ExpectTrue("band-sequence: remembers image-only paragraph",
+             p.last_block_was_standalone_band_image);
+
+  InlineImageMetadata sep_meta{};
+  sep_meta.ok = true;
+  sep_meta.width = 1200;
+  sep_meta.height = 55;
+  InlineImageLayoutPlan sep_plan{};
+  sep_plan.mode = INLINE_IMAGE_LAYOUT_BAND;
+  sep_plan.draw_width = 216;
+  sep_plan.draw_height = 10;
+  sep_plan.vertical_space_after_draw = 10;
+  ConfigureBookInlineImageStub(sep_meta, sep_plan, true);
+
+  early = false;
+  book_xml_block_handler::HandleBlockElementStart(&p, &tc.text, "p",
+                                                  image_p_attr, elem_css, "",
+                                                  &early);
+  ExpectIntEq("band-sequence: separator starts without parser-only linefeed",
+              p.pen.y, 211);
+  const char *sep_img_attr[] = {"src", "../Images/image00182.jpeg", nullptr};
+  HandleInlineImageStart(&p, &tc.text, sep_img_attr, elem_css, fns);
+  book_xml_block_handler::HandleBlockElementEnd(&p, &tc.text, "p");
+  parse_pop(&p);
+  ExpectIntEq("band-sequence: separator consumes only draw height", p.pen.y, 221);
+  ExpectTrue("band-sequence: remembers separator-only paragraph",
+             p.last_block_was_standalone_band_image);
+
+  early = false;
+  book_xml_block_handler::HandleBlockElementStart(&p, &tc.text, "p",
+                                                  text_p_attr, elem_css, "",
+                                                  &early);
+  ExpectIntEq("band-sequence: text starts immediately after separator",
+              p.pen.y, 221);
+  ExpectFalse("band-sequence: consumed image-only suppression",
+              p.last_block_was_standalone_band_image);
+  ExpectFalse("band-sequence: no pending top spacing after separator",
+              p.pending_block_break);
+  ExpectIntEq("band-sequence: no optional top spacing after separator",
+              p.pending_block_spacing_lf, 0);
 
   ResetBookInlineImageStubState();
 }
@@ -647,10 +986,16 @@ int main() {
   TestFontSizeRestoreAdjustsPenYAfterBlockImageOverflow();
   TestSuppressOnlyDoesNotCrossBlockFontScopeStart();
   TestCssSpacingNearBottomAdvancesScreen();
-  TestCssTopOneLineSpacingNearBottomAdvancesScreen();
+  TestOverflowContinuationKeepsParagraphBoundary();
+  TestTextOverflowMarksNextScreenAsDrawable();
+  TestCssTopSpacingKeepsRenderableSlotsAtKnownPens();
+  TestCssTopSpacingPreservesVisualParagraphGapNearBottom();
+  TestCssTopOneLineSpacingNearBottomKeepsTwoRenderableLines();
   TestInlineImageMarksScreenAsDrawableContent();
   TestStyledBandImageWithoutMarginTopDoesNotAddDefaultTopSpace();
   TestPostImageCssSpacingFlushesNearBottom();
+  TestDecorativeBandImageSuppressesWrapperMargins();
+  TestBandImageSeparatorSequenceMatchesRenderedHeight();
   TestPageBreakBeforeAlwaysUsesHardBreak();
   printf("PASS: %d tests\n", g_pass);
   return 0;

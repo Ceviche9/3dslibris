@@ -37,8 +37,13 @@
 #include "shared/text_render_layout_utils.h"
 #include <algorithm>
 #include <list>
+#include <string>
 #include <string.h>
 #include <time.h>
+
+#ifndef PAGE_RENDER_TRACE
+#define PAGE_RENDER_TRACE 0
+#endif
 
 namespace {
 
@@ -237,7 +242,67 @@ void Page::Draw(Text *ts) {
   const int second_bottom_margin = first_is_left ? rightBottomMargin : leftBottomMargin;
   bool on_first_screen = true;
 
+#if defined(DSLIBRIS_DEBUG) && PAGE_RENDER_TRACE
+  std::string render_line_text;
+  bool render_line_started = false;
+  int render_line_y = 0;
+  int render_line_screen = 0;
+  auto append_render_char = [&](u32 cp) {
+    if (!render_line_started) {
+      render_line_started = true;
+      render_line_y = (int)ts->GetPenY();
+      render_line_screen = on_first_screen ? 0 : 1;
+      render_line_text.clear();
+    }
+    if (render_line_text.size() >= 96)
+      return;
+    if (cp >= 32 && cp < 127)
+      render_line_text.push_back((char)cp);
+    else if (cp >= 128)
+      render_line_text.push_back('?');
+  };
+  auto flush_render_line = [&](const char *event) {
+    if (!render_line_started)
+      return;
+    const text_render_layout_utils::ReadingScreenMetrics metrics =
+        text_render_layout_utils::ResolveReadingScreenMetrics(
+            render_line_screen == 0, first_is_left, leftBottomMargin,
+            rightBottomMargin);
+    DBG_LOGF_CAT(
+        ts->GetReporter(), DBG_LEVEL_DEBUG, DBG_CAT_EPUB,
+        "LINETRACE render %s scr=%d y=%d current_pen=(%d,%d) h=%d ls=%d maxH=%d botM_guard=%d render_bottom=%d fits=%d text=\"%s\"",
+        event ? event : "line", render_line_screen, render_line_y,
+        (int)ts->GetPenX(), (int)ts->GetPenY(), ts->GetHeight(),
+        ts->linespacing, metrics.max_height, metrics.bottom_margin,
+        render_line_screen == 0 ? leftBottomMargin : rightBottomMargin,
+        text_render_layout_utils::CurrentLineFitsScreen(
+            render_line_y, ts->GetHeight(), ts->linespacing,
+            metrics.max_height, metrics.bottom_margin)
+            ? 1
+            : 0,
+        render_line_text.c_str());
+    render_line_started = false;
+    render_line_text.clear();
+  };
+  DBG_LOGF_CAT(
+      ts->GetReporter(), DBG_LEVEL_DEBUG, DBG_CAT_EPUB,
+      "LINETRACE render footer first_left=%d leftBottom=%d rightBottom=%d guard_left=%d guard_right=%d first_screen=%s px=%d h=%d",
+      first_is_left ? 1 : 0, leftBottomMargin, rightBottomMargin,
+      text_render_layout_utils::ResolveReadingScreenMetrics(
+          true, first_is_left, leftBottomMargin, rightBottomMargin)
+          .bottom_margin,
+      text_render_layout_utils::ResolveReadingScreenMetrics(
+          false, first_is_left, leftBottomMargin, rightBottomMargin)
+          .bottom_margin,
+      first_screen == ts->screenleft ? "left" : "right", (int)ts->GetPixelSize(),
+      ts->GetHeight());
+#else
+  auto flush_render_line = [&](const char *) {};
+  auto append_render_char = [&](u32) {};
+#endif
+
   auto advance_to_next_screen = [&]() -> bool {
+    flush_render_line("advance-screen-before");
     if (ts->GetScreen() == first_screen) {
 #ifdef OFFSCREEN
       ts->SetScreen(second_screen);
@@ -259,6 +324,13 @@ void Page::Draw(Text *ts) {
       }
       ts->InitPen();
       ts->linebegan = false;
+#if defined(DSLIBRIS_DEBUG) && PAGE_RENDER_TRACE
+      DBG_LOGF_CAT(
+          ts->GetReporter(), DBG_LEVEL_DEBUG, DBG_CAT_EPUB,
+          "LINETRACE render advance-screen-after scr=%d pen=(%d,%d) bottom=%d",
+          on_first_screen ? 0 : 1, (int)ts->GetPenX(), (int)ts->GetPenY(),
+          ts->margin.bottom);
+#endif
       return true;
     }
     return false;
@@ -378,6 +450,7 @@ void Page::Draw(Text *ts) {
       continue;
     } else if (c == '\n') {
       // line break, page breaking if necessary
+      flush_render_line("newline-before");
       i++;
       next_image_context = INLINE_IMAGE_CONTEXT_DEFAULT;
       next_image_align = 0;
@@ -431,6 +504,7 @@ void Page::Draw(Text *ts) {
         ts->PrintNewLine();
       }
     } else if (c == TEXT_SCREEN_BREAK) {
+      flush_render_line("screen-break-before");
       i++;
       // Forced screen break emitted by ForcePageBreak (CSS page-break-before)
       // or by advance_page_overflow during block image layout.
@@ -590,9 +664,12 @@ void Page::Draw(Text *ts) {
 
         InlineImageLayoutPlan image_plan{};
         int current_screen = on_first_screen ? 0 : 1;
+        const InlineImageContext image_context = next_image_context;
+        const int image_author_width = next_image_author_width;
+        const u8 image_align = next_image_align;
         book->PlanInlineImageLayout(ts, image_id, current_screen, ts->GetPenX(),
-                                    ts->GetPenY(), ts->linebegan, next_image_context,
-                                    &image_plan, next_image_author_width);
+                                    ts->GetPenY(), ts->linebegan, image_context,
+                                    &image_plan, image_author_width);
         if (next_image_align != 0)
           ApplyFloatImageLayoutOverride(&image_plan, ts->linebegan,
                                         ts->linespacing);
@@ -611,6 +688,21 @@ void Page::Draw(Text *ts) {
           }
           ts->linebegan = false;
         }
+
+#if defined(DSLIBRIS_DEBUG) && PAGE_RENDER_TRACE
+        const int image_plan_screen = current_screen;
+        const int image_plan_pen_x = (int)ts->GetPenX();
+        const int image_plan_pen_y = (int)ts->GetPenY();
+        DBG_LOGF_CAT(
+            ts->GetReporter(), DBG_LEVEL_DEBUG, DBG_CAT_EPUB,
+            "LINETRACE render image-plan id=%u scr=%d pen=(%d,%d) mode=%d draw=%dx%d vspace=%d advance_before=%d line_break_before=%d linebegan=%d context=%d author_w=%d align=%d",
+            (unsigned)image_id, image_plan_screen, image_plan_pen_x,
+            image_plan_pen_y, (int)image_plan.mode, image_plan.draw_width,
+            image_plan.draw_height, image_plan.vertical_space_after_draw,
+            image_plan.advance_before ? 1 : 0,
+            image_plan.line_break_before ? 1 : 0, ts->linebegan ? 1 : 0,
+            (int)image_context, image_author_width, (int)image_align);
+#endif
 
         if (image_plan.mode == INLINE_IMAGE_LAYOUT_INLINE &&
             !ts->linebegan && ts->GetPenX() == ts->margin.left &&
@@ -637,6 +729,15 @@ void Page::Draw(Text *ts) {
         const bool image_drawn =
             book->DrawInlineImage(ts, image_id, &image_plan, current_screen,
                                   draw_image_align);
+#if defined(DSLIBRIS_DEBUG) && PAGE_RENDER_TRACE
+        DBG_LOGF_CAT(
+            ts->GetReporter(), DBG_LEVEL_DEBUG, DBG_CAT_EPUB,
+            "LINETRACE render image-draw id=%u scr=%d pen_before=(%d,%d) draw=%dx%d drawn=%d align=%d",
+            (unsigned)image_id, current_screen, image_pen_x,
+            (int)ts->GetPenY(), image_plan.draw_width,
+            image_plan.draw_height, image_drawn ? 1 : 0,
+            (int)draw_image_align);
+#endif
         if (image_drawn && link_active && active_link_render_index >= 0 &&
             active_link_render_index < (int)rendered_inline_links_.size()) {
           InlineLinkRenderEntry &entry =
@@ -697,6 +798,15 @@ void Page::Draw(Text *ts) {
         }
         if (stop_page_draw)
           break;
+#if defined(DSLIBRIS_DEBUG) && PAGE_RENDER_TRACE
+        DBG_LOGF_CAT(
+            ts->GetReporter(), DBG_LEVEL_DEBUG, DBG_CAT_EPUB,
+            "LINETRACE render image-after id=%u scr=%d pen_after=(%d,%d) linebegan=%d mode=%d delta_y=%d",
+            (unsigned)image_id, on_first_screen ? 0 : 1,
+            (int)ts->GetPenX(), (int)ts->GetPenY(),
+            ts->linebegan ? 1 : 0, (int)image_plan.mode,
+            (int)ts->GetPenY() - image_plan_pen_y);
+#endif
         next_image_align = 0;
         next_image_author_width = 0;
       } else {
@@ -769,6 +879,7 @@ void Page::Draw(Text *ts) {
 
       const int glyph_x0 = (int)ts->GetPenX();
       const int base_pen_y = (int)ts->GetPenY();
+      append_render_char(c);
       if (link_active)
         ts->SetTextColorOverride(LinkTextColor(ts));
       else
@@ -835,6 +946,7 @@ void Page::Draw(Text *ts) {
     }
   }
 
+  flush_render_line("page-end");
   if (in_preformatted_block)
     ts->SetClipToContentEnabled(saved_clip_to_content);
   ts->ClearTextColorOverride();

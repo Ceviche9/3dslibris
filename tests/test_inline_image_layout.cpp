@@ -131,6 +131,21 @@ int main() {
   }
 
   {
+    InlineImageLayoutRequest req = BaseRequest();
+    req.image_context = INLINE_IMAGE_CONTEXT_LEADING_PARAGRAPH;
+    req.author_max_width_px = 20;
+    req.line_began = false;
+    InlineImageLayoutPlan plan =
+        PlanInlineImageLayout(req, Metadata(20, 3));
+    ExpectMode("tiny author-sized leading separator stays inline", plan,
+               INLINE_IMAGE_LAYOUT_INLINE);
+    ExpectEq("tiny separator keeps natural height",
+             plan.draw_height, 3);
+    ExpectEq("tiny separator consumes no band vertical space",
+             plan.vertical_space_after_draw, 0);
+  }
+
+  {
     InlineImageLayoutPlan plan =
         PlanInlineImageLayout(BaseRequest(), Metadata(573, 438));
     ExpectMode("medium map becomes band", plan,

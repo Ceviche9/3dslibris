@@ -12,6 +12,10 @@
 #define SCREEN_ADVANCE_TRACE 0
 #endif
 
+#ifndef EPUB_LINE_TRACE
+#define EPUB_LINE_TRACE 0
+#endif
+
 namespace book_xml_text_emit {
 
 namespace {
@@ -85,6 +89,45 @@ bool CurrentLineFitsEmitMetrics(int pen_y, const FlowEmitMetrics &metrics) {
   return (metrics.overflow_threshold <= 0) ||
          (pen_y <= metrics.overflow_threshold);
 }
+
+#if defined(DSLIBRIS_DEBUG) && EPUB_LINE_TRACE
+std::string DebugSegmentText(const char *txt, size_t start, size_t end) {
+  std::string out;
+  if (!txt || end <= start)
+    return out;
+  const size_t max_len = 64;
+  for (size_t i = start; i < end && out.size() < max_len; i++) {
+    const unsigned char c = (unsigned char)txt[i];
+    if (c == '\n')
+      out += "\\n";
+    else if (c == '\r')
+      out += "\\r";
+    else if (c == '\t')
+      out += "\\t";
+    else if (c >= 32 && c < 127)
+      out.push_back((char)c);
+    else if (c >= 128)
+      out.push_back('?');
+  }
+  return out;
+}
+
+void TraceParserLineEvent(parsedata_t *p, const FlowEmitMetrics &metrics,
+                          const char *event, int y_before, int x_before,
+                          const char *text) {
+  if (!p)
+    return;
+  DBG_LOGF_CAT(
+      p->reporter, DBG_LEVEL_DEBUG, DBG_CAT_EPUB,
+      "LINETRACE parse %s scr=%d y=%d x=%d pen=(%d,%d) lh=%d ls=%d maxH=%d botM=%d threshold=%d fits=%d lb=%d p_content=%d text=\"%s\"",
+      event ? event : "?", p->screen, y_before, x_before, p->pen.x, p->pen.y,
+      metrics.lineheight, metrics.linespacing, metrics.screen_max_height,
+      metrics.screen_bottom_margin, metrics.overflow_threshold,
+      CurrentLineFitsEmitMetrics(y_before, metrics) ? 1 : 0,
+      p->linebegan ? 1 : 0, p->paragraph_has_content ? 1 : 0,
+      text ? text : "");
+}
+#endif
 
 } // namespace
 
@@ -348,6 +391,7 @@ void EmitFlowedShapedText(
       EmitBidiSegment(p, run, line_start, line_end, bidi_runs,
                       !metrics.text_already_transformed);
       p->linebegan = true;
+      p->current_screen_has_drawable_content = true;
       p->pen.x = metrics.margin_left + (u16)line_px;
 
       unit_index = line_end;
@@ -399,6 +443,7 @@ void EmitFlowedShapedText(
         }
         p->pen.x += unit_advance;
         p->linebegan = true;
+        p->current_screen_has_drawable_content = true;
       }
       unit_index++;
       continue;
@@ -435,22 +480,44 @@ void EmitFlowedShapedText(
     const bool need_wrap =
         ((p->pen.x + advance) >= right_edge &&
          !(p->linebegan && attached_closing_punctuation));
+#if defined(DSLIBRIS_DEBUG) && EPUB_LINE_TRACE
+    const std::string segment_text =
+        DebugSegmentText(txt, segment_start, segment_end);
+    const int segment_y_before = p->pen.y;
+    const int segment_x_before = p->pen.x;
+#endif
     if (need_wrap) {
+#if defined(DSLIBRIS_DEBUG) && EPUB_LINE_TRACE
+      TraceParserLineEvent(p, metrics, "wrap-width-before", p->pen.y,
+                           p->pen.x, segment_text.c_str());
+#endif
       parse_append_page_byte(p, '\n');
       p->pen.x = metrics.margin_left;
       p->pen.y += (metrics.lineheight + metrics.linespacing);
       p->linebegan = false;
+#if defined(DSLIBRIS_DEBUG) && EPUB_LINE_TRACE
+      TraceParserLineEvent(p, metrics, "wrap-width-after", p->pen.y,
+                           p->pen.x, segment_text.c_str());
+#endif
     }
     // Advance to the next screen/page only if the candidate line (p->pen.y
     // after any wrap) itself cannot be drawn. A candidate line may be valid
     // even when there is no room for a following line.
     {
       if (!CurrentLineFitsEmitMetrics(p->pen.y, metrics)) {
+#if defined(DSLIBRIS_DEBUG) && EPUB_LINE_TRACE
+        TraceParserLineEvent(p, metrics, "overflow-before-advance", p->pen.y,
+                             p->pen.x, segment_text.c_str());
+#endif
 #if defined(DSLIBRIS_DEBUG) && SCREEN_ADVANCE_TRACE
         const int pre_scr = p->screen;
 #endif
         AdvancePageIfNeeded(p, metrics.lineheight, advance_page_on_overflow,
                             advance_ctx);
+#if defined(DSLIBRIS_DEBUG) && EPUB_LINE_TRACE
+        TraceParserLineEvent(p, metrics, "overflow-after-advance", p->pen.y,
+                             p->pen.x, segment_text.c_str());
+#endif
 #if defined(DSLIBRIS_DEBUG) && SCREEN_ADVANCE_TRACE
         if (p->screen != pre_scr || (pre_scr == 1 && p->screen == 0)) {
           DBG_LOGF_CAT(p->reporter, DBG_LEVEL_DEBUG, DBG_CAT_LAYOUT,
@@ -474,7 +541,12 @@ void EmitFlowedShapedText(
     else
       AppendParsedCodepoints(p, txt + segment_start, segment_end - segment_start);
     p->linebegan = true;
+    p->current_screen_has_drawable_content = true;
     p->pen.x += advance;
+#if defined(DSLIBRIS_DEBUG) && EPUB_LINE_TRACE
+    TraceParserLineEvent(p, metrics, "emit-segment", segment_y_before,
+                         segment_x_before, segment_text.c_str());
+#endif
     unit_index = segment_end_index;
   }
 }

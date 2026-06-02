@@ -142,6 +142,8 @@ void parse_init(parsedata_t *data) {
   data->strip_leading_list_marker = false;
   data->in_paragraph = false;
   data->paragraph_has_content = false;
+  data->paragraph_has_standalone_band_image = false;
+  data->last_block_was_standalone_band_image = false;
   data->text_transform_word_start = true;
   data->base_font_size_px = 0;
   data->css_px_baseline = 16;

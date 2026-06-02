@@ -97,6 +97,8 @@ BLOCK_SPACING_TRACE ?= 0
 SCREEN_ADVANCE_TRACE ?= 0
 FLUSHPENDING_TRACE ?= 0
 EPUB_SPACING_TRACE ?= 0
+EPUB_LINE_TRACE ?= 0
+PAGE_RENDER_TRACE ?= 0
 EXPAT_ENABLE_DTD ?= 0
 EXPAT_ENABLE_NS ?= 0
 EXPAT_CONTEXT_BYTES ?= 0
@@ -191,6 +193,14 @@ endif
 
 ifeq ($(EPUB_SPACING_TRACE),1)
 CFLAGS	+=	-DEPUB_SPACING_TRACE=1
+endif
+
+ifeq ($(EPUB_LINE_TRACE),1)
+CFLAGS	+=	-DEPUB_LINE_TRACE=1
+endif
+
+ifeq ($(PAGE_RENDER_TRACE),1)
+CFLAGS	+=	-DPAGE_RENDER_TRACE=1
 endif
 
 CXXFLAGS	:= $(CFLAGS) -fno-rtti -fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables -std=gnu++11 -fstack-usage

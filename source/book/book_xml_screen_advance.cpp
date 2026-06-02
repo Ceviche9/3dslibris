@@ -44,6 +44,28 @@ static void LinefeedRLocal(parsedata_t *p, const char *tag,
   book_xml_screen_advance::Linefeed(p);
 }
 
+static int CountRenderableLineSlots(int pen_y, int max_height,
+                                    int bottom_margin, int line_step) {
+  if (line_step <= 0)
+    return 0;
+  int slots = 0;
+  int y = pen_y;
+  while (!text_render_layout_utils::CurrentLineBeyondReadingScreen(
+      y, max_height, bottom_margin)) {
+    slots++;
+    y += line_step;
+  }
+  return slots;
+}
+
+static int CountFloorLineSlots(int pen_y, int max_height,
+                               int bottom_margin, int line_step) {
+  if (line_step <= 0)
+    return 0;
+  const int usable = max_height - bottom_margin - pen_y;
+  return (usable > 0) ? (usable / line_step) : 0;
+}
+
 } // namespace
 
 namespace book_xml_screen_advance {
@@ -70,7 +92,7 @@ void ApplyClearBreak(parsedata_t *p) {
 }
 
 bool IsCurrentReadingScreenVisuallyEmpty(const parsedata_t *p) {
-  return p && !p->current_screen_has_drawable_content;
+  return p && !p->current_screen_has_drawable_content && !p->linebegan;
 }
 
 void ClearPendingBlockSpacing(parsedata_t *p) {
@@ -316,14 +338,15 @@ void FlushPendingBlockSpacingBeforeContent(parsedata_t *p,
     return;
 #if defined(DSLIBRIS_DEBUG) && FLUSHPENDING_TRACE
   DBG_LOGF(p->book->GetStatusReporter(),
-    "FlushPending ENTER[->%s] pbb=%d pbl=%d from_css=%d adv_ok=%d pen_y=%d lb=%d scr=%d vis=%d",
+    "FlushPending ENTER[->%s] pbb=%d pbl=%d from_css=%d adv_ok=%d pen_y=%d lb=%d scr=%d vis=%d empty=%d",
     next_tag ? next_tag : "?",
     p->pending_block_break ? 1 : 0,
     p->pending_block_spacing_lf,
     p->pending_block_spacing_from_css ? 1 : 0,
     p->pending_block_spacing_advance_ok ? 1 : 0,
     p->pen.y, p->linebegan ? 1 : 0, p->screen,
-    p->current_screen_has_drawable_content ? 1 : 0);
+    p->current_screen_has_drawable_content ? 1 : 0,
+    IsCurrentReadingScreenVisuallyEmpty(p) ? 1 : 0);
 #endif
   if (!p->pending_block_break && p->pending_block_spacing_lf <= 0) {
     ClearPendingBlockSpacing(p);
@@ -344,19 +367,30 @@ void FlushPendingBlockSpacingBeforeContent(parsedata_t *p,
           p->book->GetOrientation() != 0, p->screen, ts->margin.bottom,
           text_render_layout_utils::ResolveCompactReadingBottomMargin(ts->margin.bottom));
   int available = 0;
+  int floor_available = 0;
+  int screen_limit = 0;
+  int usable = 0;
   {
-    const int usable = metrics.max_height - metrics.bottom_margin - p->pen.y;
-    available = (usable > 0) ? (usable / line_step) : 0;
+    screen_limit = metrics.max_height - metrics.bottom_margin;
+    usable = screen_limit - p->pen.y;
+    floor_available = CountFloorLineSlots(p->pen.y, metrics.max_height,
+                                          metrics.bottom_margin, line_step);
+    available = CountRenderableLineSlots(p->pen.y, metrics.max_height,
+                                         metrics.bottom_margin, line_step);
 #if defined(DSLIBRIS_DEBUG) && FLUSHPENDING_TRACE
     DBG_LOGF(p->book->GetStatusReporter(),
-      "FlushPending METRICS lh=%d ls=%d step=%d maxH=%d botM=%d usable=%d avail=%d lb=%d",
+      "FlushPending METRICS lh=%d ls=%d step=%d maxH=%d botM=%d limit=%d usable=%d floor_avail=%d slots=%d lb=%d reason=%s",
       lh, ls, line_step,
       metrics.max_height, metrics.bottom_margin,
-      usable, available, p->linebegan ? 1 : 0);
+      screen_limit, usable, floor_available, available,
+      p->linebegan ? 1 : 0,
+      p->pending_block_spacing_reason ? p->pending_block_spacing_reason : "-");
 #endif
   }
 
   // ---- Phase 1: mandatory block break -----------------------------------
+  bool phase1_advanced = false;
+  bool phase1_emitted = false;
   if (p->pending_block_break && p->linebegan) {
     // Only emit the mandatory break when there is visible content on screen.
     // When the screen is visually empty (e.g. after a text-overflow advance
@@ -371,8 +405,10 @@ void FlushPendingBlockSpacingBeforeContent(parsedata_t *p,
       if (available >= min_available) {
         LinefeedRLocal(p, next_tag ? next_tag : "?", "mandatory-break", 0);
         available--;
+        phase1_emitted = true;
       } else {
         AdvanceParsedScreen(p);
+        phase1_advanced = true;
 
         const text_render_layout_utils::ReadingScreenMetrics after_metrics =
             text_render_layout_utils::ResolveReadingScreenMetricsForReadingScreen(
@@ -383,7 +419,15 @@ void FlushPendingBlockSpacingBeforeContent(parsedata_t *p,
 
         const int usable_after =
             after_metrics.max_height - after_metrics.bottom_margin - p->pen.y;
-        available = (usable_after > 0) ? (usable_after / line_step) : 0;
+        (void)usable_after;
+        screen_limit = after_metrics.max_height - after_metrics.bottom_margin;
+        usable = screen_limit - p->pen.y;
+        floor_available = CountFloorLineSlots(p->pen.y, after_metrics.max_height,
+                                              after_metrics.bottom_margin,
+                                              line_step);
+        available = CountRenderableLineSlots(p->pen.y, after_metrics.max_height,
+                                             after_metrics.bottom_margin,
+                                             line_step);
       }
     }
   }
@@ -397,19 +441,32 @@ void FlushPendingBlockSpacingBeforeContent(parsedata_t *p,
       css_sourced && p->pending_block_spacing_reason &&
       std::strstr(p->pending_block_spacing_reason, "paragraph-top") != NULL;
   int emit_opt = 0;
+  bool collapse_opt = false;
+  bool advance_screen = false;
+  bool empty_skip = false;
   if (opt > 0 && !IsCurrentReadingScreenVisuallyEmpty(p)) {
     const int required = 2;
     if (opt + required <= available) {
       emit_opt = opt;
+    } else if (required <= available) {
+      emit_opt = available - required;
+      if (emit_opt < 0) emit_opt = 0;
+      collapse_opt = true;
     } else if (css_sourced && (advance_ok || css_top_spacing)) {
       // CSS-mandated spacing can't coexist with a content line on this screen.
       // Advance to the next screen; the screen break already separates blocks.
 #if defined(DSLIBRIS_DEBUG)
       DBG_LOGF(p->book->GetStatusReporter(),
-        "FlushPending ADVANCE[->%s] css_sourced=1 opt=%d avail=%d pen_y=%d scr=%d",
-        next_tag ? next_tag : "?", opt, available, p->pen.y, p->screen);
+        "FlushPending ADVANCE[->%s] reason=%s css_sourced=1 opt=%d slots=%d floor_avail=%d limit=%d usable=%d pen_y=%d scr=%d lb=%d vis=%d phase1_adv=%d phase1_emit=%d",
+        next_tag ? next_tag : "?",
+        p->pending_block_spacing_reason ? p->pending_block_spacing_reason : "-",
+        opt, available, floor_available, screen_limit, usable,
+        p->pen.y, p->screen, p->linebegan ? 1 : 0,
+        p->current_screen_has_drawable_content ? 1 : 0,
+        phase1_advanced ? 1 : 0, phase1_emitted ? 1 : 0);
 #endif
       AdvanceParsedScreen(p);
+      advance_screen = true;
       const text_render_layout_utils::ReadingScreenMetrics after_metrics =
           text_render_layout_utils::ResolveReadingScreenMetricsForReadingScreen(
               p->book->GetOrientation() != 0, p->screen, ts->margin.bottom,
@@ -417,11 +474,16 @@ void FlushPendingBlockSpacingBeforeContent(parsedata_t *p,
                   ts->margin.bottom));
       const int usable_after =
           after_metrics.max_height - after_metrics.bottom_margin - p->pen.y;
-      available = (usable_after > 0) ? (usable_after / line_step) : 0;
+      (void)usable_after;
+      screen_limit = after_metrics.max_height - after_metrics.bottom_margin;
+      usable = screen_limit - p->pen.y;
+      floor_available = CountFloorLineSlots(p->pen.y, after_metrics.max_height,
+                                            after_metrics.bottom_margin,
+                                            line_step);
+      available = CountRenderableLineSlots(p->pen.y, after_metrics.max_height,
+                                           after_metrics.bottom_margin,
+                                           line_step);
       emit_opt = 0;
-    } else if (required <= available) {
-      emit_opt = available - required;
-      if (emit_opt < 0) emit_opt = 0;
     }
     for (int i = 0; i < emit_opt; i++)
       LinefeedRLocal(p, next_tag ? next_tag : "?", "pending-spacing", 0);
@@ -434,22 +496,30 @@ void FlushPendingBlockSpacingBeforeContent(parsedata_t *p,
         advance_ok ? 1 : 0, p->pen.y, p->linebegan ? 1 : 0, p->screen,
         p->current_screen_has_drawable_content ? 1 : 0);
 #endif
+    empty_skip = true;
   }
 #if defined(DSLIBRIS_DEBUG) && EPUB_SPACING_TRACE
   if (opt > 0) {
     DBG_LOGF_CAT(
         p->book->GetStatusReporter(), DBG_LEVEL_DEBUG, DBG_CAT_EPUB,
-        "SPTRACE FLUSH done tag=%s opt=%d emit_opt=%d css=%d adv_ok=%d pen_y=%d lb=%d scr=%d vis=%d",
-        next_tag ? next_tag : "?", opt, emit_opt, css_sourced ? 1 : 0,
-        advance_ok ? 1 : 0, p->pen.y, p->linebegan ? 1 : 0, p->screen,
-        p->current_screen_has_drawable_content ? 1 : 0);
+        "SPTRACE FLUSH decision tag=%s reason=%s opt=%d emit_opt=%d collapse_opt=%d advance_screen=%d empty_skip=%d css=%d adv_ok=%d slots=%d floor_avail=%d limit=%d usable=%d pen_y=%d lb=%d scr=%d vis=%d empty=%d phase1_adv=%d phase1_emit=%d",
+        next_tag ? next_tag : "?",
+        p->pending_block_spacing_reason ? p->pending_block_spacing_reason : "-",
+        opt, emit_opt, collapse_opt ? 1 : 0, advance_screen ? 1 : 0,
+        empty_skip ? 1 : 0, css_sourced ? 1 : 0, advance_ok ? 1 : 0,
+        available, floor_available, screen_limit, usable, p->pen.y,
+        p->linebegan ? 1 : 0, p->screen,
+        p->current_screen_has_drawable_content ? 1 : 0,
+        IsCurrentReadingScreenVisuallyEmpty(p) ? 1 : 0,
+        phase1_advanced ? 1 : 0, phase1_emitted ? 1 : 0);
   }
 #endif
 #if defined(DSLIBRIS_DEBUG) && FLUSHPENDING_TRACE
   DBG_LOGF(p->book->GetStatusReporter(),
-    "FlushPending EXIT[->%s] opt=%d avail=%d emit_opt=%d pen_y=%d scr=%d lb=%d",
+    "FlushPending EXIT[->%s] opt=%d slots=%d floor_avail=%d emit_opt=%d collapse_opt=%d advance_screen=%d pen_y=%d scr=%d lb=%d",
     next_tag ? next_tag : "?",
-    opt, available, emit_opt, p->pen.y, p->screen, p->linebegan ? 1 : 0);
+    opt, available, floor_available, emit_opt, collapse_opt ? 1 : 0,
+    advance_screen ? 1 : 0, p->pen.y, p->screen, p->linebegan ? 1 : 0);
 #endif
 
   ClearPendingBlockSpacing(p);

@@ -166,6 +166,42 @@ void TestCurrentLineVisibilityIgnoresFollowingLine() {
                  threshold + 1, max_height, bottom_margin));
 }
 
+void TestCurrentLineVisibilityUsesUnguardedFullScreenClip() {
+  const int max_height = 400;
+  const int unguarded_bottom_margin = 36;
+  const int guarded_bottom_margin =
+      unguarded_bottom_margin +
+      text_render_layout_utils::kFullReadingScreenFooterGuardPx;
+
+  ExpectFalse("full-screen current line may use guarded safety band",
+              text_render_layout_utils::CurrentLineBeyondReadingScreen(
+                  360, max_height, guarded_bottom_margin));
+  ExpectFalse("full-screen current line may sit at unguarded clip edge",
+              text_render_layout_utils::CurrentLineBeyondReadingScreen(
+                  364, max_height, guarded_bottom_margin));
+  ExpectTrue("full-screen current line past unguarded clip still overflows",
+             text_render_layout_utils::CurrentLineBeyondReadingScreen(
+                 365, max_height, guarded_bottom_margin));
+}
+
+void TestCurrentLineFitsUsesSameFullScreenBaselineAsVisibility() {
+  const int max_height = 400;
+  const int guarded_bottom_margin =
+      36 + text_render_layout_utils::kFullReadingScreenFooterGuardPx;
+  const int line_h = 13;
+  const int line_ls = 0;
+
+  ExpectTrue("full-screen baseline at 358 fits",
+             text_render_layout_utils::CurrentLineFitsScreen(
+                 358, line_h, line_ls, max_height, guarded_bottom_margin));
+  ExpectTrue("full-screen baseline at unguarded clip edge fits",
+             text_render_layout_utils::CurrentLineFitsScreen(
+                 364, line_h, line_ls, max_height, guarded_bottom_margin));
+  ExpectFalse("full-screen baseline past unguarded clip edge overflows",
+              text_render_layout_utils::CurrentLineFitsScreen(
+                  365, line_h, line_ls, max_height, guarded_bottom_margin));
+}
+
 void TestParagraphStartGuardAllowsOneLineParagraphInLastSlot() {
   ExpectFalse("one-line paragraph may use last visible slot",
               text_render_layout_utils::ShouldAdvanceParagraphStartGuard(
@@ -278,6 +314,8 @@ int main() {
   TestWouldOverflowReadingScreen();
   TestWouldCurrentLineOverflowReadingScreen();
   TestCurrentLineVisibilityIgnoresFollowingLine();
+  TestCurrentLineVisibilityUsesUnguardedFullScreenClip();
+  TestCurrentLineFitsUsesSameFullScreenBaselineAsVisibility();
   TestParagraphStartGuardAllowsOneLineParagraphInLastSlot();
   TestCurrentLineFitAllowsVisualLastLineWithoutFollowingRoom();
   TestBandImageAdvanceKeepsLastVisibleBaseline();

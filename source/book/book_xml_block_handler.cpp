@@ -358,12 +358,15 @@ bool HandleBlockElementStart(
     parse_push(p, TAG_OL);
     book_xml_list_utils::ConfigureElementListSemantics(p, attr);
   } else if (!strcmp(el, "p")) {
-    if (!p->strip_leading_list_marker)
+    const bool after_standalone_band_image =
+        p->last_block_was_standalone_band_image;
+    if (!p->strip_leading_list_marker && !after_standalone_band_image)
       book_xml_element_style::EnsureBlockBoundaryBeforeBlockStart(
           p, "p", "paragraph-block-boundary");
     parse_push(p, TAG_P);
     p->in_paragraph = true;
     p->paragraph_has_content = false;
+    p->paragraph_has_standalone_band_image = false;
     p->text_transform_word_start = true;
     p->last_p_style = book_xml_css_resolver::ExtractStyleAttr(attr);
     p->last_p_class = book_xml_css_resolver::ExtractClassAttr(attr);
@@ -384,7 +387,7 @@ bool HandleBlockElementStart(
       ApplyPublisherBlockMargins(p, ts, attr, elem_css);
     }
     const int line_h = ts->GetHeight() + ts->linespacing;
-    if (can_apply_top_margin) {
+    if (can_apply_top_margin && !after_standalone_band_image) {
       const int default_lf = 0;
       const int lf_count = book_xml_parser_style_utils::ResolveBlockTopLinefeeds(
           default_lf, mtr, line_h);
@@ -407,9 +410,12 @@ bool HandleBlockElementStart(
         phase = "top-skipped-tight-list";
       else if (tight_block_paragraph)
         phase = "top-skipped-tight-block";
+      else if (after_standalone_band_image)
+        phase = "top-skipped-after-band-image";
       LogResolvedBlockMargin(p, "p", phase, p->last_p_style, p->last_p_class,
                              mtr, line_h, 0, 0);
     }
+    p->last_block_was_standalone_band_image = false;
   } else if (!strcmp(el, "hr")) {
     parse_push(p, TAG_UNKNOWN);
     p->last_hr_style = book_xml_css_resolver::ExtractStyleAttr(attr);
@@ -658,8 +664,11 @@ bool HandleBlockElementEnd(parsedata_t *p, Text *ts, const char *el) {
 #endif
     }
     RestoreActiveBlockTextAlignMarker(p);
+    p->last_block_was_standalone_band_image =
+        !p->paragraph_has_content && p->paragraph_has_standalone_band_image;
     p->in_paragraph = false;
     p->paragraph_has_content = false;
+    p->paragraph_has_standalone_band_image = false;
     p->block_margin_left = 0;
     p->block_margin_right = 0;
   } else if (!strcmp(el, "div")) {

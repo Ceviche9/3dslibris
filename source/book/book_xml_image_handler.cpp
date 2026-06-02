@@ -12,6 +12,7 @@
 #include "book/book_xml_css_resolver.h"
 #include "book/book_xml_css_style_utils.h"
 #include "book/book_xml_parser_style_utils.h"
+#include "book/book_xml_screen_advance.h"
 #include "book/epub_css_class_map.h"
 #include "book/inline_image_layout.h"
 #include "formats/common/epub_image_utils.h"
@@ -81,6 +82,16 @@ static bool BlankLineLocal(const parsedata_t *p) {
   if (!p || p->buflen < 3)
     return true;
   return (p->buf[p->buflen - 1] == '\n') && (p->buf[p->buflen - 2] == '\n');
+}
+
+static bool IsDecorativeLeadingBandImage(const InlineImageLayoutPlan &plan,
+                                         bool leading_paragraph_image,
+                                         int line_step) {
+  return leading_paragraph_image &&
+         plan.mode == INLINE_IMAGE_LAYOUT_BAND &&
+         line_step > 0 &&
+         plan.draw_height > 0 &&
+         plan.draw_height <= line_step;
 }
 
 static book_xml_css_style_utils::ClearMode
@@ -260,11 +271,21 @@ void HandleInlineImageStart(parsedata_t *p, Text *ts, const char **attr,
       ApplyFloatImageLayoutOverride(&image_plan, p->linebegan,
                                     ts->linespacing);
 
+    const int plan_pen_x = p->pen.x;
+    const int plan_pen_y = p->pen.y;
+    const bool plan_paragraph_has_content = p->paragraph_has_content;
+    const int line_step = ts->GetHeight() + ts->linespacing;
+    const bool decorative_leading_band =
+        IsDecorativeLeadingBandImage(image_plan, leading_paragraph_image,
+                                     line_step);
+    if (decorative_leading_band)
+      book_xml_screen_advance::ClearPendingBlockSpacing(p);
+
   #if defined(DSLIBRIS_DEBUG) && EPUB_SPACING_TRACE
     DBG_LOGF_CAT(
       p->book->GetStatusReporter(), DBG_LEVEL_DEBUG, DBG_CAT_EPUB,
       "SPTRACE IMG plan mode=%s scr=%d pen=(%d,%d) lb=%d vis=%d adv=%d lbf=%d "
-      "vspace=%d draw=%dx%d maxw=%d src=%s",
+      "vspace=%d draw=%dx%d maxw=%d leading=%d decor=%d para_content=%d in_p=%d fig=%d src=%s",
       InlineImageLayoutModeToStringLocal(image_plan.mode), p->screen,
       p->pen.x, p->pen.y, p->linebegan ? 1 : 0,
       p->current_screen_has_drawable_content ? 1 : 0,
@@ -272,6 +293,11 @@ void HandleInlineImageStart(parsedata_t *p, Text *ts, const char **attr,
       image_plan.line_break_before ? 1 : 0,
       image_plan.vertical_space_after_draw, image_plan.draw_width,
       image_plan.draw_height, author_max_w,
+      leading_paragraph_image ? 1 : 0,
+      decorative_leading_band ? 1 : 0,
+      p->paragraph_has_content ? 1 : 0,
+      p->in_paragraph ? 1 : 0,
+      figure_with_caption ? 1 : 0,
       resolved.empty() ? "-" : resolved.c_str());
   #endif
 
@@ -333,8 +359,11 @@ void HandleInlineImageStart(parsedata_t *p, Text *ts, const char **attr,
       break;
 
     case INLINE_IMAGE_LAYOUT_BAND:
-      if (p->in_paragraph)
+      if (p->in_paragraph && leading_paragraph_image) {
+        p->paragraph_has_standalone_band_image = true;
+      } else if (p->in_paragraph && !decorative_leading_band) {
         p->paragraph_has_content = true;
+      }
       p->pen.x = ts->margin.left;
       p->pen.y += image_plan.vertical_space_after_draw;
       p->linebegan = false;
@@ -342,9 +371,16 @@ void HandleInlineImageStart(parsedata_t *p, Text *ts, const char **attr,
     #if defined(DSLIBRIS_DEBUG) && EPUB_SPACING_TRACE
         DBG_LOGF_CAT(
           p->book->GetStatusReporter(), DBG_LEVEL_DEBUG, DBG_CAT_EPUB,
-          "SPTRACE IMG band-after-overflow scr=%d pen=(%d,%d) lb=%d vis=%d",
-          p->screen, p->pen.x, p->pen.y, p->linebegan ? 1 : 0,
-          p->current_screen_has_drawable_content ? 1 : 0);
+          "SPTRACE IMG band-after-overflow scr=%d pen_before=(%d,%d) pen_after=(%d,%d) delta_y=%d draw=%dx%d vspace=%d leading=%d para_before=%d para_after=%d lb=%d vis=%d src=%s",
+          p->screen, plan_pen_x, plan_pen_y, p->pen.x, p->pen.y,
+          p->pen.y - plan_pen_y, image_plan.draw_width,
+          image_plan.draw_height, image_plan.vertical_space_after_draw,
+          leading_paragraph_image ? 1 : 0,
+          plan_paragraph_has_content ? 1 : 0,
+          p->paragraph_has_content ? 1 : 0,
+          p->linebegan ? 1 : 0,
+          p->current_screen_has_drawable_content ? 1 : 0,
+          resolved.empty() ? "-" : resolved.c_str());
     #endif
       if (img_style) {
         const int line_h = ts->GetHeight() + ts->linespacing;
@@ -356,9 +392,10 @@ void HandleInlineImageStart(parsedata_t *p, Text *ts, const char **attr,
     #if defined(DSLIBRIS_DEBUG) && EPUB_SPACING_TRACE
         DBG_LOGF_CAT(
           p->book->GetStatusReporter(), DBG_LEVEL_DEBUG, DBG_CAT_EPUB,
-          "SPTRACE IMG band-margin-bottom lf=%d scr=%d pen_y=%d vis=%d",
+          "SPTRACE IMG band-margin-bottom lf=%d scr=%d pen_y=%d vis=%d src=%s",
           lf_count, p->screen, p->pen.y,
-          p->current_screen_has_drawable_content ? 1 : 0);
+          p->current_screen_has_drawable_content ? 1 : 0,
+          resolved.empty() ? "-" : resolved.c_str());
     #endif
         for (int i = 0; i < lf_count; i++)
           fns.linefeed(p);

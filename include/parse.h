@@ -85,6 +85,8 @@ struct parsedata_t {
 	bool strip_leading_list_marker;
 	bool in_paragraph;
 	bool paragraph_has_content;
+	bool paragraph_has_standalone_band_image;
+	bool last_block_was_standalone_band_image;
 	bool bold;
 	bool italic;
 	bool underline;
