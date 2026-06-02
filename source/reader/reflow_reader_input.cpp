@@ -246,7 +246,6 @@ bool HandleInBook(App &app, Book *book, Text *ts, Prefs * /*prefs*/,
     } else if (keys & ctrl.back_to_library) {
       ExitInlineLinkFocus(&app, book);
       app.ShowLibraryView();
-      app.prefs->Write();
     } else if (keys & ctrl.open_settings) {
       ExitInlineLinkFocus(&app, book);
       app.ShowSettingsView(true);
@@ -320,7 +319,6 @@ bool HandleInBook(App &app, Book *book, Text *ts, Prefs * /*prefs*/,
     } else if (keys & ctrl.back_to_library) {
       app.ResetPageRepeat();
       app.ShowLibraryView();
-      app.prefs->Write();
     } else if (keys & ctrl.open_settings) {
       app.ResetPageRepeat();
       app.ShowSettingsView(true);

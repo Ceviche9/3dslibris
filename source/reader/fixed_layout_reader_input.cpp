@@ -161,7 +161,6 @@ bool HandleInBook(App &app, Book *book, Text *ts, uint32_t keys, uint32_t held,
     }
   } else if (keys & ctrl.back_to_library) {
     app.ShowLibraryView();
-    app.prefs->Write();
   } else if (keys & ctrl.open_settings) {
     app.ShowSettingsView(true);
     app.prefs->Write();

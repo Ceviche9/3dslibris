@@ -555,7 +555,6 @@ void SettingsController::PrefsHandleEvent() {
       return;
   } else if (book_ctx && (keys & KEY_START)) {
     app_.ShowLibraryView();
-    app_.prefs->Write();
   } else if (prefs_input_utils::ShouldReturnFromPrefs(
                  keys, book_ctx, KEY_B, KEY_SELECT, KEY_Y, KEY_START)) {
     app_.ReturnFromPrefs();
@@ -642,7 +641,6 @@ void SettingsController::PrefsHandleTouch() {
   if (book_ctx_touch &&
       enclosesWithSlack(button_prefs_library_, footerX, footerY)) {
     app_.ShowLibraryView();
-    app_.prefs->Write();
     return;
   }
 
