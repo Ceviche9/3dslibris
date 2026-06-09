@@ -187,6 +187,20 @@ void TestBandImageAlignUsesParagraphRight() {
                  page_alignment_utils::ResolveBandImageAlignMode(0, 2), 2);
 }
 
+void TestRightAlignIgnoresPublisherMarginStart() {
+  test::ExpectEq("right align reaches base right edge",
+                 page_alignment_utils::ComputeAlignedLineStartX(
+                     10, 10, 30, 240, 40, 2),
+                 190);
+}
+
+void TestCenterAlignIgnoresPublisherMarginStart() {
+  test::ExpectEq("center align uses base content box",
+                 page_alignment_utils::ComputeAlignedLineStartX(
+                     10, 10, 30, 240, 40, 1),
+                 100);
+}
+
 } // namespace
 
 int main() {
@@ -205,5 +219,7 @@ int main() {
   TestVisualLineWidthMultipleWordBoundaries();
   TestBandImageAlignUsesExplicitModeFirst();
   TestBandImageAlignUsesParagraphRight();
+  TestRightAlignIgnoresPublisherMarginStart();
+  TestCenterAlignIgnoresPublisherMarginStart();
   return 0;
 }

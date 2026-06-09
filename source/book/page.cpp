@@ -666,7 +666,6 @@ void Page::Draw(Text *ts) {
         int current_screen = on_first_screen ? 0 : 1;
         const InlineImageContext image_context = next_image_context;
         const int image_author_width = next_image_author_width;
-        const u8 image_align = next_image_align;
         book->PlanInlineImageLayout(ts, image_id, current_screen, ts->GetPenX(),
                                     ts->GetPenY(), ts->linebegan, image_context,
                                     &image_plan, image_author_width);
@@ -701,22 +700,18 @@ void Page::Draw(Text *ts) {
             image_plan.draw_height, image_plan.vertical_space_after_draw,
             image_plan.advance_before ? 1 : 0,
             image_plan.line_break_before ? 1 : 0, ts->linebegan ? 1 : 0,
-            (int)image_context, image_author_width, (int)image_align);
+            (int)image_context, image_author_width, (int)next_image_align);
 #endif
 
         if (image_plan.mode == INLINE_IMAGE_LAYOUT_INLINE &&
-            !ts->linebegan && ts->GetPenX() == ts->margin.left &&
+            !ts->linebegan &&
             (paragraph_align == book_xml_css_style_utils::TextAlign::Center ||
              paragraph_align == book_xml_css_style_utils::TextAlign::Right)) {
-          const int available =
-              ts->display.width - ts->margin.left - ts->margin.right;
-          if (image_plan.draw_width < available) {
-            int x_off = paragraph_align ==
-                                book_xml_css_style_utils::TextAlign::Center
-                            ? (available - image_plan.draw_width) / 2
-                            : available - image_plan.draw_width;
-            ts->SetPen((u16)(ts->margin.left + x_off), ts->GetPenY());
-          }
+          ts->SetPen((u16)page_alignment_utils::ComputeAlignedLineStartX(
+                         ts->margin.left, ts->margin.right, ts->GetPenX(),
+                         ts->display.width, image_plan.draw_width,
+                         (int)paragraph_align),
+                     ts->GetPenY());
         }
 
         const int image_pen_x = (int)ts->GetPenX();
@@ -856,25 +851,20 @@ void Page::Draw(Text *ts) {
             (int)ts->GetPenY(), on_first_screen ? "first" : "second");
 #endif
         ts->SetPen((u16)rtl_x, ts->GetPenY());
-      } else if (ts->GetPenX() == ts->margin.left &&
+      } else if (!ts->linebegan &&
                  (paragraph_align == book_xml_css_style_utils::TextAlign::Center ||
                   paragraph_align == book_xml_css_style_utils::TextAlign::Right)) {
-        int available_width = ts->display.width - ts->margin.left - ts->margin.right;
         auto measure_fn = [](u32 codepoint, unsigned char style, void *ctx) -> int {
           return ((Text *)ctx)->GetAdvance(codepoint, style);
         };
         int line_width = page_alignment_utils::MeasureAlignedLineWidth(
             buf, length, (size_t)(i - 1), ts->bold, ts->italic, mono,
             measure_fn, ts);
-        int x_offset = 0;
-        if (paragraph_align == book_xml_css_style_utils::TextAlign::Center) {
-          x_offset = (available_width - line_width) / 2;
-        } else if (paragraph_align == book_xml_css_style_utils::TextAlign::Right) {
-          x_offset = available_width - line_width;
-        }
-        if (x_offset < 0)
-          x_offset = 0;
-        ts->SetPen((u16)(ts->margin.left + x_offset), ts->GetPenY());
+        ts->SetPen((u16)page_alignment_utils::ComputeAlignedLineStartX(
+                       ts->margin.left, ts->margin.right, ts->GetPenX(),
+                       ts->display.width, line_width,
+                       (int)paragraph_align),
+                   ts->GetPenY());
       }
 
       const int glyph_x0 = (int)ts->GetPenX();

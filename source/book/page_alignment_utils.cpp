@@ -232,6 +232,31 @@ int MeasureFirstVisualLineWidth(const uint32_t *buf, size_t length, size_t start
   return line_width;
 }
 
+int ComputeAlignedLineStartX(int base_margin_left, int base_margin_right,
+                             int current_line_start_x, int display_width,
+                             int line_width, int paragraph_align) {
+  const int content_left = base_margin_left < 0 ? 0 : base_margin_left;
+  int content_right = display_width - base_margin_right;
+  if (content_right < content_left)
+    content_right = content_left;
+  const int available_width = content_right - content_left;
+  if (available_width <= 0)
+    return content_left;
+
+  int x_offset = 0;
+  if (paragraph_align == 1) {
+    x_offset = (available_width - line_width) / 2;
+  } else if (paragraph_align == 2) {
+    x_offset = available_width - line_width;
+  } else {
+    return current_line_start_x > content_left ? current_line_start_x
+                                               : content_left;
+  }
+  if (x_offset < 0)
+    x_offset = 0;
+  return content_left + x_offset;
+}
+
 uint8_t ResolveBandImageAlignMode(uint8_t explicit_align_mode,
                                   int paragraph_align) {
   if (explicit_align_mode != 0)

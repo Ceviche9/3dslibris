@@ -160,13 +160,11 @@ InlineImageLayoutPlan PlanInlineImageLayout(const InlineImageLayoutRequest &req,
   const int inline_height = thin_ornament ? eff_meta.height : line_height;
   const int inline_width =
       std::max(1, DivRoundNearest(eff_meta.width * inline_height, eff_meta.height));
-  // Inline is reserved for genuinely small ornament-like images.
-  const bool author_sized_leading_ornament =
-      leading_paragraph_image && req.author_max_width_px > 0 &&
-      eff_meta.height <= line_height && eff_meta.width <= (3 * line_height);
+  // Inline is reserved for genuinely small images inside text.  If the image
+  // is the first/only paragraph content, keep it as a block so ornaments and
+  // separators get their own centered line and vertical space.
   const bool inline_candidate =
-      (!(leading_paragraph_image && req.author_max_width_px > 0) ||
-       author_sized_leading_ornament) &&
+      !(leading_paragraph_image && req.author_max_width_px > 0) &&
       eff_meta.height <= (3 * line_height) && inline_width <= (3 * line_height);
 
   const bool wide_band_candidate =

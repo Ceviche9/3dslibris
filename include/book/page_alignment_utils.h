@@ -17,6 +17,10 @@ int MeasureFirstVisualLineWidth(const uint32_t *buf, size_t length, size_t start
                                 int available_width,
                                 MeasureGlyphFn measure, void *ctx);
 
+int ComputeAlignedLineStartX(int base_margin_left, int base_margin_right,
+                             int current_line_start_x, int display_width,
+                             int line_width, int paragraph_align);
+
 uint8_t ResolveBandImageAlignMode(uint8_t explicit_align_mode,
                                   int paragraph_align);
 

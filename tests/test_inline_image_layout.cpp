@@ -137,12 +137,26 @@ int main() {
     req.line_began = false;
     InlineImageLayoutPlan plan =
         PlanInlineImageLayout(req, Metadata(20, 3));
-    ExpectMode("tiny author-sized leading separator stays inline", plan,
-               INLINE_IMAGE_LAYOUT_INLINE);
+    ExpectMode("tiny author-sized leading separator uses band layout", plan,
+               INLINE_IMAGE_LAYOUT_BAND);
     ExpectEq("tiny separator keeps natural height",
              plan.draw_height, 3);
-    ExpectEq("tiny separator consumes no band vertical space",
-             plan.vertical_space_after_draw, 0);
+    ExpectEq("tiny separator consumes drawn vertical space",
+             plan.vertical_space_after_draw, 3 + req.linespacing);
+  }
+
+  {
+    InlineImageLayoutRequest req = BaseRequest();
+    req.image_context = INLINE_IMAGE_CONTEXT_LEADING_PARAGRAPH;
+    req.author_max_width_px = 22;
+    req.line_began = false;
+    InlineImageLayoutPlan plan =
+        PlanInlineImageLayout(req, Metadata(1200, 200));
+    ExpectMode("wide author-sized leading ornament uses band layout", plan,
+               INLINE_IMAGE_LAYOUT_BAND);
+    ExpectEq("wide ornament keeps requested width", plan.draw_width, 22);
+    ExpectEq("wide ornament consumes drawn vertical space",
+             plan.vertical_space_after_draw, plan.draw_height + req.linespacing);
   }
 
   {
