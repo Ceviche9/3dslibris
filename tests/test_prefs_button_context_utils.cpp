@@ -21,12 +21,14 @@ int main() {
   test::ExpectEq("general slot 6", settings::PrefsButtonForVisibleSlot(false, false, 6),
                  PREFS_BUTTON_LIBRARY_SORT);
 
-  test::ExpectEq("extra button count", settings::ExtraPrefsButtonCount(), 3);
+  test::ExpectEq("extra button count", settings::ExtraPrefsButtonCount(), 4);
   test::ExpectEq("extra slot 0", settings::ExtraPrefsButtonForSlot(0),
-                 PREFS_BUTTON_CIRCLE_PAD_PAGE_TURN);
+                 PREFS_BUTTON_REOPEN_LAST_BOOK);
   test::ExpectEq("extra slot 1", settings::ExtraPrefsButtonForSlot(1),
-                 PREFS_BUTTON_RESET_DEFAULTS);
+                 PREFS_BUTTON_CIRCLE_PAD_PAGE_TURN);
   test::ExpectEq("extra slot 2", settings::ExtraPrefsButtonForSlot(2),
+                 PREFS_BUTTON_RESET_DEFAULTS);
+  test::ExpectEq("extra slot 3", settings::ExtraPrefsButtonForSlot(3),
                  PREFS_BUTTON_CLEAR_CACHE);
 
   test::ExpectEq("book slot 0", settings::PrefsButtonForVisibleSlot(true, false, 0),

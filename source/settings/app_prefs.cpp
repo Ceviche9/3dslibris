@@ -107,6 +107,14 @@ static void ToggleClockFormatSetting(Prefs *prefs) {
   prefs->Write();
 }
 
+static void ToggleReopenLastBookSetting(App *app) {
+  if (!app)
+    return;
+  app->reopen = !app->reopen;
+  if (app->prefs)
+    app->prefs->Write();
+}
+
 static void CycleColorMode(Text *ts, App *app) {
   if (!ts)
     return;
@@ -349,9 +357,9 @@ void SettingsController::PrefsInit() {
   const std::vector<std::string> labels{
       "style customization",
       "font configuration", "font size",    "extra line spacing",
-      "extra paragraph spacing",
-      "screen orientation", "clock format", "time remaining", "color mode", "library view",
-      "circle pad pages",   "library sort", "book information", "index",      "bookmarks",
+      "extra paragraph spacing", "screen orientation", "clock format",
+      "time remaining", "reopen last book", "color mode", "library view",
+      "circle pad pages", "library sort", "book information", "index", "bookmarks",
       "reset settings",
       "clear cache",        "publisher indent", "publisher margins"};
 
@@ -402,6 +410,7 @@ void SettingsController::PrefsDraw() {
   PrefsRefreshButton(PREFS_BUTTON_FONT_CONFIG);
   PrefsRefreshButton(PREFS_BUTTON_TIME24H);
   PrefsRefreshButton(PREFS_BUTTON_TIME_REMAINING);
+  PrefsRefreshButton(PREFS_BUTTON_REOPEN_LAST_BOOK);
   PrefsRefreshButton(PREFS_BUTTON_COLORMODE);
   PrefsRefreshButton(PREFS_BUTTON_LIBRARY_VIEW);
   PrefsRefreshButton(PREFS_BUTTON_BOOK_INFO);
@@ -951,7 +960,13 @@ void SettingsController::PrefsRefreshButton(int index) {
         std::string("time remaining"));
     app_.prefsButtons[PREFS_BUTTON_TIME_REMAINING].SetLabel2(
         app_.prefs->show_time_remaining ? std::string("on")
-                                        : std::string("off"));
+                                         : std::string("off"));
+    break;
+  case PREFS_BUTTON_REOPEN_LAST_BOOK:
+    app_.prefsButtons[PREFS_BUTTON_REOPEN_LAST_BOOK].SetLabel1(
+        std::string("reopen last book"));
+    app_.prefsButtons[PREFS_BUTTON_REOPEN_LAST_BOOK].SetLabel2(
+        app_.reopen ? std::string("on") : std::string("off"));
     break;
   case PREFS_BUTTON_COLORMODE: {
     int mode = app_.ts->GetColorMode();
@@ -1191,6 +1206,7 @@ void SettingsController::ResetToDefaults() {
   app_.prefs->fixed_layout_rtl = false;
   app_.prefs->circle_pad_page_turn = true;
   app_.prefs->show_time_remaining = false;
+  app_.reopen = true;
   app_.MarkBookLayoutDirty();
   app_.prefs->Write();
   for (int i = 0; i < PREFS_BUTTON_COUNT; i++)
@@ -1249,6 +1265,13 @@ void SettingsController::PrefsHandlePress() {
     PrefsRefreshButton(PREFS_BUTTON_TIME_REMAINING);
     app_.prefs->Write();
     app_.RequestStatusRedraw();
+    app_.MarkPrefsDirty();
+    return;
+  }
+
+  if (selected_button == PREFS_BUTTON_REOPEN_LAST_BOOK) {
+    ToggleReopenLastBookSetting(&app_);
+    PrefsRefreshButton(PREFS_BUTTON_REOPEN_LAST_BOOK);
     app_.MarkPrefsDirty();
     return;
   }

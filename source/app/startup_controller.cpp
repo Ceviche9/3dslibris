@@ -25,6 +25,7 @@
 #include "book/book.h"
 #include "shared/boot_trace.h"
 #include "shared/debug_log.h"
+#include "shared/app_flow_utils.h"
 #include "shared/home_button_guard.h"
 #include "shared/main.h"
 #include "shared/path_constants.h"
@@ -355,7 +356,8 @@ int StartupController::RunBootSequence()
   DBG_LOG(&app_, VERSION);
 
   Book *current_book = app_.GetCurrentBook();
-  if (app_.reopen && current_book)
+  if (app_flow_utils::ShouldReopenBookOnStartup(app_.reopen,
+                                                current_book != nullptr))
   {
     app_.SetSelectedBook(current_book);
     const char *title = current_book->GetTitle();

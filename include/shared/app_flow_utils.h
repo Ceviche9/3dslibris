@@ -70,6 +70,7 @@ bool MuPdfWantsFinalQualityRender(MuPdfDocumentKind kind);
 bool MuPdfShouldPrefetchAdjacent(MuPdfDocumentKind kind);
 bool ShouldIndexBookFilename(const char *filename);
 bool SupportsMetadataIndexing(format_t format);
+bool ShouldReopenBookOnStartup(bool reopen_enabled, bool has_current_book);
 std::string SdmcToArchiveRelPath(const std::string &path);
 bool NeedsBookRelayout(int page_count, unsigned int book_layout_revision,
                        unsigned int app_layout_revision,

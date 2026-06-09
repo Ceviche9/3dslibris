@@ -154,6 +154,15 @@ void TestSupportsMetadataIndexing() {
               app_flow_utils::SupportsMetadataIndexing(FORMAT_UNDEF));
 }
 
+void TestShouldReopenBookOnStartup() {
+  ExpectTrue("enabled with current book reopens",
+             app_flow_utils::ShouldReopenBookOnStartup(true, true));
+  ExpectFalse("disabled with current book stays in library",
+              app_flow_utils::ShouldReopenBookOnStartup(false, true));
+  ExpectFalse("enabled without current book stays in library",
+              app_flow_utils::ShouldReopenBookOnStartup(true, false));
+}
+
 void TestSdmcToArchiveRelPath() {
   ExpectEq("sdmc prefix stripped",
            app_flow_utils::SdmcToArchiveRelPath("sdmc:/3ds/3dslibris/book"),
@@ -320,6 +329,7 @@ int main() {
   TestMuPdfDocumentKindHelpers();
   TestShouldIndexBookFilename();
   TestSupportsMetadataIndexing();
+  TestShouldReopenBookOnStartup();
   TestSdmcToArchiveRelPath();
   TestNeedsBookRelayout();
   TestFindBookmarkJumpTarget();

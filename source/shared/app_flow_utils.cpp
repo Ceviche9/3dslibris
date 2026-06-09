@@ -96,6 +96,10 @@ bool SupportsMetadataIndexing(format_t format) {
   return format == FORMAT_EPUB || format == FORMAT_PDF;
 }
 
+bool ShouldReopenBookOnStartup(bool reopen_enabled, bool has_current_book) {
+  return reopen_enabled && has_current_book;
+}
+
 std::string SdmcToArchiveRelPath(const std::string &path) {
   static const char kPrefix[] = "sdmc:";
   if (path.compare(0, sizeof(kPrefix) - 1, kPrefix) == 0) {

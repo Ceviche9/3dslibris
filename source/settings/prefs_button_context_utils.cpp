@@ -15,6 +15,7 @@ static const int kGeneralPrefsButtons[] = {
 };
 
 static const int kGeneralExtraButtons[] = {
+    PREFS_BUTTON_REOPEN_LAST_BOOK,
     PREFS_BUTTON_CIRCLE_PAD_PAGE_TURN,
     PREFS_BUTTON_RESET_DEFAULTS,
     PREFS_BUTTON_CLEAR_CACHE,
