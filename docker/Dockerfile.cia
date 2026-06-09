@@ -6,6 +6,9 @@ ARG MAKEROM_VERSION=makerom-v0.18.4
 
 RUN set -eux; \
     echo "Building for platform: ${TARGETPLATFORM}"; \
+    if [ -f /etc/apt/sources.list.d/devkitpro.list ]; then \
+        mv /etc/apt/sources.list.d/devkitpro.list /etc/apt/sources.list.d/devkitpro.list.disabled; \
+    fi; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
         ca-certificates \
