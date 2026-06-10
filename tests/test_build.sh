@@ -40,7 +40,7 @@ _build_third_party_objs() {
       done <<EOF
 $(split_flags "${CFLAGS:-}")
 EOF
-      "$CC_BIN" -std=c99 "${ccflags[@]}" -c "$TEST_ROOT/third_party/utf8proc/utf8proc.c" \
+      "$CC_BIN" -std=c99 ${ccflags[@]+"${ccflags[@]}"} -c "$TEST_ROOT/third_party/utf8proc/utf8proc.c" \
         -I"$TEST_ROOT/third_party/utf8proc" \
         -o "$TEST_OUTDIR/utf8proc.o"
     fi
@@ -60,7 +60,7 @@ EOF
         done <<EOF
 $(split_flags "${CFLAGS:-}")
 EOF
-        "$CC_BIN" -std=c99 "${ccflags[@]}" -c "$src" -I"$TEST_ROOT/third_party/libunibreak/src" -o "$TEST_OUTDIR/${f}.o"
+        "$CC_BIN" -std=c99 ${ccflags[@]+"${ccflags[@]}"} -c "$src" -I"$TEST_ROOT/third_party/libunibreak/src" -o "$TEST_OUTDIR/${f}.o"
       fi
       if [ -f "$TEST_OUTDIR/${f}.o" ]; then
         objs+=("$TEST_OUTDIR/${f}.o")
@@ -106,7 +106,7 @@ EOF
         done <<EOF
 $(split_flags "$expat_flags $expat_inc")
 EOF
-        "$CC_BIN" -std=c99 "${ccflags[@]}" "${expat_split[@]}" -c "$src" -o "$TEST_OUTDIR/expat_${f}.o"
+        "$CC_BIN" -std=c99 ${ccflags[@]+"${ccflags[@]}"} ${expat_split[@]+"${expat_split[@]}"} -c "$src" -o "$TEST_OUTDIR/expat_${f}.o"
       fi
       if [ -f "$TEST_OUTDIR/expat_${f}.o" ]; then
         objs+=("$TEST_OUTDIR/expat_${f}.o")
