@@ -248,8 +248,8 @@ void EnsureBlockBoundaryBeforeBlockStart(parsedata_t *p, const char *tag,
     const int compact_bottom =
         p->ts->margin.bottom < 16 ? p->ts->margin.bottom : 16;
     const text_render_layout_utils::ReadingScreenMetrics metrics =
-        text_render_layout_utils::ResolveReadingScreenMetricsForReadingScreen(
-            orientation_utils::IsTurnedRight(p->book->GetOrientation()),
+        text_render_layout_utils::ResolveReadingScreenMetricsForOrientation(
+            p->book->GetOrientation(),
             p->screen,
             p->ts->margin.bottom,
             compact_bottom);

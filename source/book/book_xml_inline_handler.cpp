@@ -379,8 +379,8 @@ void SyncInlineStyleAfterPop(parsedata_t *p, Text *ts) {
   }
 
   const text_render_layout_utils::ReadingScreenMetrics metrics =
-      text_render_layout_utils::ResolveReadingScreenMetricsForReadingScreen(
-          orientation_utils::IsTurnedRight(p->book->GetOrientation()), p->screen, ts->margin.bottom,
+      text_render_layout_utils::ResolveReadingScreenMetricsForOrientation(
+          p->book->GetOrientation(), p->screen, ts->margin.bottom,
           text_render_layout_utils::ResolveCompactReadingBottomMargin(
               ts->margin.bottom));
   if (!text_render_layout_utils::CurrentLineFitsScreen(

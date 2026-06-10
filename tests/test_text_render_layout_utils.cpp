@@ -125,6 +125,49 @@ void TestResolveReadingScreenMetricsForReadingScreen() {
            44);
 }
 
+void TestResolveReadingScreenMetricsForOrientation() {
+  using text_render_layout_utils::ResolveReadingScreenMetricsForOrientation;
+  using text_render_layout_utils::ResolveReadingScreenMetricsForReadingScreen;
+
+  // Portrait orientations must match the boolean variant exactly.
+  for (int orientation = 0; orientation <= 1; ++orientation) {
+    for (int screen = 0; screen <= 1; ++screen) {
+      const text_render_layout_utils::ReadingScreenMetrics expected =
+          ResolveReadingScreenMetricsForReadingScreen(orientation == 1, screen,
+                                                      36, 16);
+      const text_render_layout_utils::ReadingScreenMetrics actual =
+          ResolveReadingScreenMetricsForOrientation((unsigned char)orientation,
+                                                    screen, 36, 16);
+      ExpectEq("portrait orientation max_height parity", actual.max_height,
+               expected.max_height);
+      ExpectEq("portrait orientation bottom_margin parity",
+               actual.bottom_margin, expected.bottom_margin);
+    }
+  }
+
+  // Landscape: both screens 240 tall; top compact, bottom HUD strip + guard.
+  const text_render_layout_utils::ReadingScreenMetrics top =
+      ResolveReadingScreenMetricsForOrientation(2, 0, 36, 16);
+  ExpectEq("landscape top max_height", top.max_height, 240);
+  ExpectEq("landscape top bottom_margin", top.bottom_margin, 20);
+
+  const text_render_layout_utils::ReadingScreenMetrics bottom =
+      ResolveReadingScreenMetricsForOrientation(2, 1, 36, 16);
+  ExpectEq("landscape bottom max_height", bottom.max_height, 240);
+  ExpectEq("landscape bottom bottom_margin", bottom.bottom_margin,
+           text_render_layout_utils::kLandscapeHudStripPx +
+               text_render_layout_utils::kFullReadingScreenFooterGuardPx);
+}
+
+void TestReadingScreenHeightPxForOrientation() {
+  using text_render_layout_utils::ReadingScreenHeightPxForOrientation;
+  ExpectEq("turned-left screen 0", ReadingScreenHeightPxForOrientation(0, 0), 400);
+  ExpectEq("turned-left screen 1", ReadingScreenHeightPxForOrientation(0, 1), 320);
+  ExpectEq("turned-right screen 0", ReadingScreenHeightPxForOrientation(1, 0), 400);
+  ExpectEq("landscape screen 0", ReadingScreenHeightPxForOrientation(2, 0), 240);
+  ExpectEq("landscape screen 1", ReadingScreenHeightPxForOrientation(2, 1), 240);
+}
+
 void TestResolveCompactReadingBottomMargin() {
   ExpectEq("keeps compact footer when already small",
            text_render_layout_utils::ResolveCompactReadingBottomMargin(12), 12);
@@ -310,6 +353,8 @@ int main() {
   TestResolveClipRight();
   TestResolveReadingScreenMetrics();
   TestResolveReadingScreenMetricsForReadingScreen();
+  TestResolveReadingScreenMetricsForOrientation();
+  TestReadingScreenHeightPxForOrientation();
   TestResolveCompactReadingBottomMargin();
   TestWouldOverflowReadingScreen();
   TestWouldCurrentLineOverflowReadingScreen();

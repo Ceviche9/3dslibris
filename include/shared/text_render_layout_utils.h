@@ -2,10 +2,16 @@
 
 #include <algorithm>
 
+#include "shared/orientation_utils.h"
+
 namespace text_render_layout_utils {
 
 static const int kFullReadingScreenFooterGuardPx = 8;
 static const int kCompactScreenBaselineBleedPx = 2;
+// Landscape reading reserves a slim HUD strip at the bottom of the second
+// (bottom) screen for clock/progress.
+static const int kLandscapeHudStripPx = 22;
+static const int kLandscapeReadingScreenHeightPx = 240;
 
 // Returns the pixel height of a reading screen by its 0-based index.
 // Screen 0 is the first/left screen (400 px); screen 1 is the second/right
@@ -68,6 +74,34 @@ inline ReadingScreenMetrics ResolveReadingScreenMetricsForReadingScreen(
   const bool first_screen_is_left = !turned_right;
   return ResolveReadingScreenMetrics(on_first_screen, first_screen_is_left,
                                      left_bottom_margin, right_bottom_margin);
+}
+
+// Orientation-aware variant. Landscape reads top (screen 0) then bottom
+// (screen 1); the top screen has no HUD so it only keeps a compact margin,
+// while the bottom screen reserves the HUD strip plus the footer guard.
+inline ReadingScreenMetrics ResolveReadingScreenMetricsForOrientation(
+    unsigned char orientation, int current_screen, int left_bottom_margin,
+    int right_bottom_margin) {
+  if (orientation_utils::IsLandscape(orientation)) {
+    ReadingScreenMetrics metrics{};
+    metrics.max_height = kLandscapeReadingScreenHeightPx;
+    metrics.bottom_margin =
+        (current_screen == 0)
+            ? ResolveCompactReadingBottomMargin(left_bottom_margin)
+            : (kLandscapeHudStripPx + kFullReadingScreenFooterGuardPx);
+    return metrics;
+  }
+  return ResolveReadingScreenMetricsForReadingScreen(
+      orientation_utils::IsTurnedRight(orientation), current_screen,
+      left_bottom_margin, right_bottom_margin);
+}
+
+// Logical height of a reading screen for the given orientation.
+inline int ReadingScreenHeightPxForOrientation(unsigned char orientation,
+                                               int reading_screen_index) {
+  if (orientation_utils::IsLandscape(orientation))
+    return kLandscapeReadingScreenHeightPx;
+  return ReadingScreenHeightPx(reading_screen_index);
 }
 
 inline bool WouldOverflowReadingScreen(int pen_y, int line_height,

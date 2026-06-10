@@ -228,8 +228,8 @@ void HandleHeadingStart(parsedata_t *p, Text *ts, const char **attr,
     req.pen_y = p->pen.y + (pending_lf > 0 ? pending_lf * lh_step : 0);
   }
   const text_render_layout_utils::ReadingScreenMetrics metrics =
-      text_render_layout_utils::ResolveReadingScreenMetricsForReadingScreen(
-          orientation_utils::IsTurnedRight(p->book->GetOrientation()), p->screen, ts->margin.bottom,
+      text_render_layout_utils::ResolveReadingScreenMetricsForOrientation(
+          p->book->GetOrientation(), p->screen, ts->margin.bottom,
           text_render_layout_utils::ResolveCompactReadingBottomMargin(ts->margin.bottom));
   req.screen_height = metrics.max_height;
   req.bottom_margin = metrics.bottom_margin;

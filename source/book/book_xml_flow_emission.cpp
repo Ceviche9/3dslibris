@@ -567,8 +567,8 @@ void EmitFlowedFragmentRaw(parsedata_t *p, const char *txt, int txtlen,
         const int step = lh + (ls > 0 ? ls : 0);
         if (step > 0) {
           const text_render_layout_utils::ReadingScreenMetrics sm =
-              text_render_layout_utils::ResolveReadingScreenMetricsForReadingScreen(
-                  orientation_utils::IsTurnedRight(p->book->GetOrientation()), p->screen, ts->margin.bottom,
+              text_render_layout_utils::ResolveReadingScreenMetricsForOrientation(
+                  p->book->GetOrientation(), p->screen, ts->margin.bottom,
                   text_render_layout_utils::ResolveCompactReadingBottomMargin(ts->margin.bottom));
           const bool slot1 =
               text_render_layout_utils::CurrentLineFitsScreen(
@@ -619,8 +619,8 @@ void EmitFlowedFragmentRaw(parsedata_t *p, const char *txt, int txtlen,
 
   {
     const text_render_layout_utils::ReadingScreenMetrics sm =
-        text_render_layout_utils::ResolveReadingScreenMetricsForReadingScreen(
-            orientation_utils::IsTurnedRight(p->book->GetOrientation()), p->screen, ts->margin.bottom,
+        text_render_layout_utils::ResolveReadingScreenMetricsForOrientation(
+            p->book->GetOrientation(), p->screen, ts->margin.bottom,
             text_render_layout_utils::ResolveCompactReadingBottomMargin(ts->margin.bottom));
     emit_metrics.overflow_threshold = sm.max_height - sm.bottom_margin;
     emit_metrics.screen_max_height = sm.max_height;
