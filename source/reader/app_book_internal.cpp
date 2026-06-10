@@ -20,6 +20,7 @@
 #include "reader/book_page_nav.h"
 #include "reader/book_switch_utils.h"
 #include "shared/debug_log.h"
+#include "shared/orientation_utils.h"
 #include "shared/string_utils.h"
 #include "settings/prefs.h"
 #include "ui/text.h"
@@ -156,7 +157,7 @@ bool ReuseParsedBook(App *app) {
   }
   app->SetCurrentBook(selected);
   if (app->GetMode() == AppMode::Browser) {
-    if (app->orientation) {
+    if (orientation_utils::IsTurnedRight(app->orientation)) {
       // lcdSwap(); // Not used on 3DS, keep for parity with original flow.
     }
     app->ShowCurrentBookView();
@@ -325,7 +326,7 @@ void CloseFailedOpenBook(App *app, Book *book, unsigned int session_id,
 void EnsureBookMode(App *app, const char *log_message) {
   if (!app || app->GetMode() != AppMode::Browser || app->ShouldAbortWork())
     return;
-  if (app->orientation) {
+  if (orientation_utils::IsTurnedRight(app->orientation)) {
     // lcdSwap(); // Not used on 3DS, keep for parity with original flow.
   }
   app->ShowCurrentBookView();

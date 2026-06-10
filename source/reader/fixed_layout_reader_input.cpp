@@ -19,6 +19,7 @@
 #include "formats/common/pdf_view_utils.h"
 #include "reader/book_page_nav.h"
 #include "reader/fixed_layout_input_utils.h"
+#include "shared/orientation_utils.h"
 #include "ui/text.h"
 
 namespace {
@@ -205,7 +206,8 @@ bool HandleInBook(App &app, Book *book, Text *ts, uint32_t keys, uint32_t held,
     float viewport_dx = 0.0f;
     float viewport_dy = 0.0f;
     const float accel = BuildViewportStickAccel(s_viewport_stick_active_frames);
-    MapViewportPanToReadingOrientation(app.orientation, physical_x * accel,
+    MapViewportPanToReadingOrientation(
+        orientation_utils::IsTurnedRight(app.orientation), physical_x * accel,
                                        physical_y * accel, &viewport_dx,
                                        &viewport_dy);
 

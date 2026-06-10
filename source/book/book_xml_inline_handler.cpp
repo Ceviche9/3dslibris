@@ -21,6 +21,7 @@
 #include "parse.h"
 #include "settings/prefs.h"
 #include "shared/debug_log.h"
+#include "shared/orientation_utils.h"
 #include "shared/text_render_layout_utils.h"
 #include "ui/text.h"
 
@@ -379,7 +380,7 @@ void SyncInlineStyleAfterPop(parsedata_t *p, Text *ts) {
 
   const text_render_layout_utils::ReadingScreenMetrics metrics =
       text_render_layout_utils::ResolveReadingScreenMetricsForReadingScreen(
-          p->book->GetOrientation() != 0, p->screen, ts->margin.bottom,
+          orientation_utils::IsTurnedRight(p->book->GetOrientation()), p->screen, ts->margin.bottom,
           text_render_layout_utils::ResolveCompactReadingBottomMargin(
               ts->margin.bottom));
   if (!text_render_layout_utils::CurrentLineFitsScreen(

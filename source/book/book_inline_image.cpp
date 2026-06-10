@@ -20,6 +20,7 @@
 #include "formats/epub/epub_cover_decode_utils.h"
 #include "formats/mobi/mobi.h"
 #include "formats/mobi/mobi_record_scan.h"
+#include "shared/orientation_utils.h"
 #include "shared/path_constants.h"
 #include "shared/status_reporter.h"
 #include "stb_image.h"
@@ -763,7 +764,7 @@ bool Book::PlanInlineImageLayout(Text *ts, u16 image_id, int current_screen,
   InlineImageLayoutRequest req{};
   const InlineImageScreenLayout screen_layout =
       ResolveInlineImageScreenLayoutForReadingScreen(
-          GetOrientation() != 0, current_screen, ts->margin.bottom,
+          orientation_utils::IsTurnedRight(GetOrientation()), current_screen, ts->margin.bottom,
           ts->GetHeight());
   req.screen_width = screen_dims::kTopScreenWidthPx;
   req.screen_height = screen_layout.current_screen_height;
@@ -802,7 +803,7 @@ bool Book::DrawInlineImage(Text *ts, u16 image_id,
   if (current_screen < 0) {
     const bool left_screen = (ts->GetScreen() == ts->screenleft);
     current_screen = ResolveReadingScreenIndexForPhysicalScreen(
-        GetOrientation() != 0, left_screen);
+        orientation_utils::IsTurnedRight(GetOrientation()), left_screen);
   }
   if (!plan_ptr) {
     if (!PlanInlineImageLayout(ts, image_id, current_screen, ts->GetPenX(),
@@ -816,7 +817,7 @@ bool Book::DrawInlineImage(Text *ts, u16 image_id,
   const int screen_w = screen_dims::kTopScreenWidthPx;
   const InlineImageScreenLayout draw_screen_layout =
       ResolveInlineImageScreenLayoutForReadingScreen(
-          GetOrientation() != 0, current_screen, ts->margin.bottom,
+          orientation_utils::IsTurnedRight(GetOrientation()), current_screen, ts->margin.bottom,
           ts->GetHeight());
   const int screen_h = draw_screen_layout.current_screen_height;
   const int text_w = screen_w - ts->margin.left - ts->margin.right;

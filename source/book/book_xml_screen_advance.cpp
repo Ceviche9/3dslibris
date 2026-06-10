@@ -13,6 +13,7 @@
 #include "book/page.h"
 #include "parse.h"
 #include "shared/debug_log.h"
+#include "shared/orientation_utils.h"
 #include "shared/text_render_layout_utils.h"
 #include "ui/text.h"
 
@@ -116,7 +117,7 @@ void AdvanceParsedPageOnOverflow(parsedata_t *p, int lineheight) {
       text_render_layout_utils::ResolveCompactReadingBottomMargin(ts->margin.bottom);
   const text_render_layout_utils::ReadingScreenMetrics metrics =
       text_render_layout_utils::ResolveReadingScreenMetricsForReadingScreen(
-          p->book->GetOrientation() != 0, p->screen, leftBottomMargin,
+          orientation_utils::IsTurnedRight(p->book->GetOrientation()), p->screen, leftBottomMargin,
           rightBottomMargin);
   int maxHeight = metrics.max_height;
   int bottomMargin = metrics.bottom_margin;
@@ -364,7 +365,7 @@ void FlushPendingBlockSpacingBeforeContent(parsedata_t *p,
 
   const text_render_layout_utils::ReadingScreenMetrics metrics =
       text_render_layout_utils::ResolveReadingScreenMetricsForReadingScreen(
-          p->book->GetOrientation() != 0, p->screen, ts->margin.bottom,
+          orientation_utils::IsTurnedRight(p->book->GetOrientation()), p->screen, ts->margin.bottom,
           text_render_layout_utils::ResolveCompactReadingBottomMargin(ts->margin.bottom));
   int available = 0;
   int floor_available = 0;
@@ -412,7 +413,7 @@ void FlushPendingBlockSpacingBeforeContent(parsedata_t *p,
 
         const text_render_layout_utils::ReadingScreenMetrics after_metrics =
             text_render_layout_utils::ResolveReadingScreenMetricsForReadingScreen(
-                p->book->GetOrientation() != 0,
+                orientation_utils::IsTurnedRight(p->book->GetOrientation()),
                 p->screen,
                 ts->margin.bottom,
                 text_render_layout_utils::ResolveCompactReadingBottomMargin(ts->margin.bottom));
@@ -469,7 +470,7 @@ void FlushPendingBlockSpacingBeforeContent(parsedata_t *p,
       advance_screen = true;
       const text_render_layout_utils::ReadingScreenMetrics after_metrics =
           text_render_layout_utils::ResolveReadingScreenMetricsForReadingScreen(
-              p->book->GetOrientation() != 0, p->screen, ts->margin.bottom,
+              orientation_utils::IsTurnedRight(p->book->GetOrientation()), p->screen, ts->margin.bottom,
               text_render_layout_utils::ResolveCompactReadingBottomMargin(
                   ts->margin.bottom));
       const int usable_after =

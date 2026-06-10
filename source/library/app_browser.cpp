@@ -13,6 +13,7 @@
 
 #include "app/app.h"
 #include "app/library_controller.h"
+#include "shared/orientation_utils.h"
 #include "shared/screen_dimensions.h"
 
 #include <algorithm>
@@ -149,7 +150,7 @@ void LibraryController::browser_handleevent() {
     const u32 nav_right = app_.key.dright | app_.key.right;
     if (!move)
       return false;
-    if (!app_.orientation) {
+    if (!orientation_utils::IsTurnedRight(app_.orientation)) {
       // Turned Left (right-handed): rotate d-pad mapping so directional input
       // follows the visual page orientation.
       if (key_down & nav_down) {

@@ -16,6 +16,7 @@
 #include "book/epub_css_class_map.h"
 #include "book/heading_layout.h"
 #include "parse.h"
+#include "shared/orientation_utils.h"
 #include "shared/text_render_layout_utils.h"
 #include "ui/text.h"
 
@@ -228,7 +229,7 @@ void HandleHeadingStart(parsedata_t *p, Text *ts, const char **attr,
   }
   const text_render_layout_utils::ReadingScreenMetrics metrics =
       text_render_layout_utils::ResolveReadingScreenMetricsForReadingScreen(
-          p->book->GetOrientation() != 0, p->screen, ts->margin.bottom,
+          orientation_utils::IsTurnedRight(p->book->GetOrientation()), p->screen, ts->margin.bottom,
           text_render_layout_utils::ResolveCompactReadingBottomMargin(ts->margin.bottom));
   req.screen_height = metrics.max_height;
   req.bottom_margin = metrics.bottom_margin;

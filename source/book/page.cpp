@@ -34,6 +34,7 @@
 #include "book/book_xml_css_style_utils.h"
 #include "book/page_buffer_utils.h"
 #include "shared/debug_log.h"
+#include "shared/orientation_utils.h"
 #include "shared/text_render_layout_utils.h"
 #include <algorithm>
 #include <list>
@@ -204,7 +205,8 @@ void Page::Draw(Text *ts) {
   const int rightBottomMargin =
     text_render_layout_utils::ResolveCompactReadingBottomMargin(
         ts->margin.bottom);
-  const bool turned_right = (book && book->GetOrientation() != 0);
+  const bool turned_right =
+      (book && orientation_utils::IsTurnedRight(book->GetOrientation()));
   u16 *first_screen = turned_right ? ts->screenright : ts->screenleft;
   u16 *second_screen = turned_right ? ts->screenleft : ts->screenright;
 

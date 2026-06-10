@@ -38,8 +38,8 @@ public:
   void SetTextColorOverride(u16 color);
   void ClearTextColorOverride();
 
-  void SetOrientation(bool right);
-  bool GetOrientation() const;
+  void SetOrientation(u8 orientation);
+  u8 GetOrientation() const;
 
   void GetPen(u16 *x, u16 *y);
   void GetPen(u16 &x, u16 &y);
@@ -92,7 +92,7 @@ public:
 private:
   Text *parent;
 
-  bool turned_right;
+  u8 orientation_;
   int style;
   FT_Vector pen;
   u32 codeprev;

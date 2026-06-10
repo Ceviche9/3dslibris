@@ -111,8 +111,8 @@ public:
   void SetClipToContentEnabled(bool enabled);
   void SetScriptScale(float s);
   float GetScriptScale() const;
-  void SetOrientation(bool turned_right);
-  bool GetOrientation() const;
+  void SetOrientation(u8 orientation);
+  u8 GetOrientation() const;
   void SetPen(u16 x, u16 y);
   void SetPixelSize(u8 size);
   void SetTextColorOverride(u16 color);

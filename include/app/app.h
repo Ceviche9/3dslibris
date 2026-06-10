@@ -307,7 +307,7 @@ public:
   inline bool IsBookSettingsContext() const { return nav_.prefs.from_book; }
   void DrawBottomGradientBackground();
   void DrawTopGradientBackground();
-  void SetOrientation(bool flipped);
+  void SetOrientation(u8 new_orientation);
   void ShowFontView(AppMode app_mode);
   void ShowLibraryView();
   void ReturnFromPrefs();

@@ -14,6 +14,7 @@
 #include "book/epub_css_class_map.h"
 #include "parse.h"
 #include "shared/debug_log.h"
+#include "shared/orientation_utils.h"
 #include "shared/text_render_layout_utils.h"
 #include "ui/text.h"
 
@@ -248,7 +249,7 @@ void EnsureBlockBoundaryBeforeBlockStart(parsedata_t *p, const char *tag,
         p->ts->margin.bottom < 16 ? p->ts->margin.bottom : 16;
     const text_render_layout_utils::ReadingScreenMetrics metrics =
         text_render_layout_utils::ResolveReadingScreenMetricsForReadingScreen(
-            p->book->GetOrientation() != 0,
+            orientation_utils::IsTurnedRight(p->book->GetOrientation()),
             p->screen,
             p->ts->margin.bottom,
             compact_bottom);

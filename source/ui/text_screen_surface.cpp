@@ -11,6 +11,7 @@
 #include "shared/bugfix_utils.h"
 #include "shared/color_utils.h"
 #include "shared/debug_log.h"
+#include "shared/orientation_utils.h"
 #include "ui/frame_debug_utils.h"
 #include "ui/screen_layout_constants.h"
 #include "ui/text.h"
@@ -446,11 +447,13 @@ bool TextRenderer::BlitToFramebuffer() {
       if (dirty_rect.valid) {
         framebuffer_blit_utils::ConvertLogicalRgb565RectToPhysicalBgr888(
             cache.data(), geometry, src, parent->display.height,
-            parent->display.width, logicalHeight, turned_right, dirty_rect);
+            parent->display.width, logicalHeight,
+            orientation_utils::IsTurnedRight(orientation_), dirty_rect);
       } else {
         framebuffer_blit_utils::ConvertLogicalRgb565ToPhysicalBgr888(
             cache.data(), geometry, src, parent->display.height,
-            parent->display.width, logicalHeight, turned_right);
+            parent->display.width, logicalHeight,
+            orientation_utils::IsTurnedRight(orientation_));
       }
       cache_generation++;
     }

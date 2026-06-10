@@ -40,6 +40,7 @@
 #include "app/main_loop_controller.h"
 #include "shared/boot_trace.h"
 #include "shared/debug_log.h"
+#include "shared/orientation_utils.h"
 #include "shared/path_constants.h"
 #include "parse.h"
 #include "shared/debug_runtime_mode.h"
@@ -101,7 +102,7 @@ App::App()
   reopen = true; // Reopen last book on startup by default.
   nav_.mode = AppMode::Browser;
   cache = false;
-  orientation = false; // Turned Left by default.
+  orientation = orientation_utils::ORIENT_TURNED_LEFT;
   reader_font_size = 12;
   reader_line_spacing = 0;
   paraspacing = 0;
@@ -312,7 +313,7 @@ touchPosition App::TouchRead()
   hidTouchRead(&raw); // Get raw touch coordinates from the 3DS hardware.
   touchPosition mapped;
 
-  if (!orientation)
+  if (!orientation_utils::IsTurnedRight(orientation))
   {
     // Default "Turned Left" orientation (historical mapping), X un-mirrored.
     mapped.px = raw.py;       // -> sx
@@ -362,16 +363,18 @@ void App::RequestStatusRedraw() { status_controller_->RequestStatusRedraw(); }
 
 void App::UpdateStatus() { status_controller_->UpdateStatus(); }
 
-// Set the screen orientation (turned right or left) and update touch input mapping, button layout, and mark screens dirty for redraw.
-void App::SetOrientation(bool turned_right)
+// Set the screen orientation (turned left/right or landscape) and update touch
+// input mapping, button layout, and mark screens dirty for redraw.
+void App::SetOrientation(u8 new_orientation)
 {
   // Keep software render orientation in sync with the current handedness.
   // TODO: rotating the whole console should also rotate/remap the physical
   // D-pad semantics for reader controls, not only the shoulder buttons.
-  orientation = turned_right;
+  const bool turned_right = orientation_utils::IsTurnedRight(new_orientation);
+  orientation = new_orientation;
   if (ts)
   {
-    ts->SetOrientation(turned_right);
+    ts->SetOrientation(new_orientation);
     ts->MarkAllScreensDirty();
   }
   RequestStatusRedraw();

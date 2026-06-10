@@ -12,6 +12,7 @@
 #include "shared/bugfix_utils.h"
 #include "shared/color_utils.h"
 #include "shared/debug_log.h"
+#include "shared/orientation_utils.h"
 #include "shared/path_constants.h"
 #include "shared/text_render_layout_utils.h"
 #include "stb_image.h"
@@ -55,7 +56,8 @@ static int g_text_margin_diag_budget = 12;
 }  // anonymous namespace
 
 TextRenderer::TextRenderer(Text *owner)
-    : parent(owner), turned_right(false), style(TEXT_STYLE_REGULAR), codeprev(0),
+    : parent(owner), orientation_(orientation_utils::ORIENT_TURNED_LEFT),
+      style(TEXT_STYLE_REGULAR), codeprev(0),
       hit(false), justify(false), colorMode(0), splash_light_attempted(false),
       splash_light_loaded(false), splash_light_pixels(nullptr),
       splash_dark_attempted(false), splash_dark_loaded(false),
@@ -103,14 +105,14 @@ void TextRenderer::SetColorMode(int state) {
 
 int TextRenderer::GetColorMode() { return colorMode; }
 
-void TextRenderer::SetOrientation(bool right) {
-  if (turned_right == right)
+void TextRenderer::SetOrientation(u8 orientation) {
+  if (orientation_ == orientation)
     return;
-  turned_right = right;
+  orientation_ = orientation;
   MarkAllScreensDirty();
 }
 
-bool TextRenderer::GetOrientation() const { return turned_right; }
+u8 TextRenderer::GetOrientation() const { return orientation_; }
 
 u16 TextRenderer::GetPenX() { return pen.x; }
 
