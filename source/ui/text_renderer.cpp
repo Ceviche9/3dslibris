@@ -166,7 +166,7 @@ void TextRenderer::PrintChar(u32 ucs, FT_Face face) {
   const u16 fg_color = GetFgColor();
   RGB565ToU8(fg_color, &fg_r, &fg_g, &fg_b);
 
-  const int screenWidth = (int)parent->display.width;
+  const int screenWidth = parent->LogicalWidth();
   const int contentRight = screenWidth - (int)parent->margin.right;
   int clipRight = text_render_layout_utils::ResolveClipRight(
       screenWidth, contentRight, clip_to_content_enabled);
@@ -232,7 +232,7 @@ void TextRenderer::PrintChar(u32 ucs, FT_Face face) {
         if (!GlyphWithinContentRight(sx, clipRight))
           continue;
         const size_t dst_index =
-            (size_t)sy * (size_t)parent->display.height + (size_t)sx;
+            (size_t)sy * (size_t)parent->BufferStride() + (size_t)sx;
         int br, bgc, bb;
         RGB565ToU8(parent->screen[dst_index], &br, &bgc, &bb);
         const int ia = 255 - (int)a;
@@ -302,7 +302,7 @@ void TextRenderer::PrintChar(u32 ucs, FT_Face face) {
           continue;
         }
         const size_t dst_index =
-            (size_t)sy * (size_t)parent->display.height + (size_t)sx;
+            (size_t)sy * (size_t)parent->BufferStride() + (size_t)sx;
 
         int br, bgc, bb;
         RGB565ToU8(parent->screen[dst_index], &br, &bgc, &bb);

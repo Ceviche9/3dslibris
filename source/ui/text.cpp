@@ -170,6 +170,28 @@ void Text::SetOrientation(u8 orientation) { tr->SetOrientation(orientation); }
 
 u8 Text::GetOrientation() const { return tr->GetOrientation(); }
 
+text_screen_geometry::ScreenGeometry Text::GeometryFor(
+    bool is_left_buffer) const {
+  return text_screen_geometry::ResolveTextScreenGeometry(GetOrientation(),
+                                                         is_left_buffer);
+}
+
+int Text::LogicalWidthFor(bool is_left_buffer) const {
+  return GeometryFor(is_left_buffer).width;
+}
+
+int Text::LogicalHeightFor(bool is_left_buffer) const {
+  return GeometryFor(is_left_buffer).height;
+}
+
+int Text::LogicalWidth() const {
+  return LogicalWidthFor(screen == screenleft);
+}
+
+int Text::LogicalHeight() const {
+  return LogicalHeightFor(screen == screenleft);
+}
+
 void Text::SetPen(u16 x, u16 y) { tr->SetPen(x, y); }
 
 void Text::SetPixelSize(u8 size) { fm->SetPixelSize(size); }

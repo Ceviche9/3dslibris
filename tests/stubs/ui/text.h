@@ -67,6 +67,16 @@ public:
   u16 GetPenY() { return 0; }
   void SetPen(u16, u16) {}
 
+  // Geometry. The stub keeps display.* configurable per test, so the buffer
+  // stride and logical width mirror it instead of the real fixed constants.
+  int BufferStride() const { return display.height; }
+  int LogicalWidthFor(bool) const { return display.width; }
+  int LogicalHeightFor(bool is_left_buffer) const {
+    return is_left_buffer ? 400 : 320;
+  }
+  int LogicalWidth() const { return display.width; }
+  int LogicalHeight() const { return display.height; }
+
   // Screen management
   u16 *GetScreen() { return screen; }
   void SetScreen(u16 *s) { screen = s; }

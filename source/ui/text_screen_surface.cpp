@@ -202,38 +202,41 @@ static void FillDarkSepiaGradient(u16 *dst, int stride, int w, int logical_h) {
 }  // anonymous namespace
 
 void TextRenderer::CopyScreen(u16 *src, u16 *dst) {
-  memcpy(dst, src, parent->display.width * parent->display.height * sizeof(u16));
+  memcpy(dst, src,
+         (size_t)parent->BufferStride() * (size_t)parent->BufferStride() *
+             sizeof(u16));
 }
 
 void TextRenderer::ClearScreen() {
   const bool is_left_screen = (parent->screen == parent->screenleft);
-  const int logicalHeight =
-      framebuffer_blit_utils::LogicalTextScreenHeight(is_left_screen);
-  MarkCurrentScreenDirtyRect(0, 0, parent->display.width, logicalHeight);
+  const int logicalHeight = parent->LogicalHeightFor(is_left_screen);
+  const int logicalWidth = parent->LogicalWidthFor(is_left_screen);
+  MarkCurrentScreenDirtyRect(0, 0, logicalWidth, logicalHeight);
 
   if (colorMode == 2) {
-    FillSepiaGradient(parent->screen, parent->display.height, parent->display.width,
+    FillSepiaGradient(parent->screen, parent->BufferStride(), logicalWidth,
                       logicalHeight);
     return;
   }
   if (colorMode == 5) {
-    FillDarkSepiaGradient(parent->screen, parent->display.height, parent->display.width,
+    FillDarkSepiaGradient(parent->screen, parent->BufferStride(), logicalWidth,
                           logicalHeight);
     return;
   }
 
   u16 bg_color = (colorMode == 1 || colorMode == 4) ? 0x0000 : 0xFFFF;
-  text_buffer_utils::FillLogicalScreenRows(parent->screen, parent->display.height,
-                                           parent->display.width, logicalHeight,
+  text_buffer_utils::FillLogicalScreenRows(parent->screen, parent->BufferStride(),
+                                           logicalWidth, logicalHeight,
                                            bg_color);
 }
 
 void TextRenderer::ClearRect(u16 xl, u16 yl, u16 xh, u16 yh) {
   MarkCurrentScreenDirtyRect((int)xl, (int)yl, (int)xh, (int)yh);
   int maxHeight = ScreenHeightPx(parent->screen, parent);
+  const int maxWidth = parent->LogicalWidth();
   // Pre-clamp to valid range
-  if (xl >= (u16)parent->display.width || yl >= (u16)maxHeight) return;
-  xh = std::min((int)xh, (int)parent->display.width);
+  if (xl >= (u16)maxWidth || yl >= (u16)maxHeight) return;
+  xh = std::min((int)xh, maxWidth);
   yh = std::min((int)yh, (int)maxHeight);
   // Gradient modes: copy from cached gradient instead of per-pixel powf
   if (colorMode == 2 || colorMode == 5) {
@@ -246,18 +249,18 @@ void TextRenderer::ClearRect(u16 xl, u16 yl, u16 xh, u16 yh) {
       grad = (maxHeight <= 320) ? &grad320_ds : &grad400_ds;
       cached_w = (maxHeight <= 320) ? &grad320w_ds : &grad400w_ds;
     }
-    if (grad->empty() || *cached_w != (int)parent->display.width) {
+    if (grad->empty() || *cached_w != maxWidth) {
       if (colorMode == 2)
-        FillSepiaGradient(parent->screen, parent->display.height,
-                          (int)parent->display.width, maxHeight);
+        FillSepiaGradient(parent->screen, parent->BufferStride(),
+                          maxWidth, maxHeight);
       else
-        FillDarkSepiaGradient(parent->screen, parent->display.height,
-                              (int)parent->display.width, maxHeight);
+        FillDarkSepiaGradient(parent->screen, parent->BufferStride(),
+                              maxWidth, maxHeight);
     }
     const int rw = (int)xh - (int)xl;
     const int rh = (int)yh - (int)yl;
     for (int y = 0; y < rh; y++) {
-      memcpy(parent->screen + (size_t)(yl + y) * (size_t)parent->display.height + (size_t)xl,
+      memcpy(parent->screen + (size_t)(yl + y) * (size_t)parent->BufferStride() + (size_t)xl,
              grad->data() + (size_t)(yl + y) * (size_t)*cached_w + (size_t)xl,
              (size_t)rw * sizeof(u16));
     }
@@ -265,9 +268,9 @@ void TextRenderer::ClearRect(u16 xl, u16 yl, u16 xh, u16 yh) {
   }
   const ThemePalette &palette = GetThemePalette(colorMode);
   for (u16 y = yl; y < yh; y++) {
-    u16 *row = parent->screen + (size_t)y * (size_t)parent->display.height + (size_t)xl;
+    u16 *row = parent->screen + (size_t)y * (size_t)parent->BufferStride() + (size_t)xl;
     for (u16 x = xl; x < xh; x++) {
-      *row++ = ThemeGradientPixel(x, y, parent->display.width, maxHeight, palette);
+      *row++ = ThemeGradientPixel(x, y, maxWidth, maxHeight, palette);
     }
   }
 }
@@ -306,11 +309,12 @@ u16 TextRenderer::GetBgColor() {
 void TextRenderer::FillRect(u16 xl, u16 yl, u16 xh, u16 yh, u16 color) {
   MarkCurrentScreenDirtyRect((int)xl, (int)yl, (int)xh, (int)yh);
   int maxH = ScreenHeightPx(parent->screen, parent);
+  const int maxW = parent->LogicalWidth();
   // Pre-clamp to valid range
-  if (xl >= (u16)parent->display.width || yl >= (u16)maxH) return;
-  xh = std::min((int)xh, (int)parent->display.width);
+  if (xl >= (u16)maxW || yl >= (u16)maxH) return;
+  xh = std::min((int)xh, maxW);
   yh = std::min((int)yh, (int)maxH);
-  const int stride = parent->display.height;
+  const int stride = parent->BufferStride();
   for (u16 y = yl; y < (u16)yh; y++) {
     u16 *row = parent->screen + (size_t)y * (size_t)stride + (size_t)xl;
     for (u16 x = xl; x < (u16)xh; x++) {
@@ -322,28 +326,30 @@ void TextRenderer::FillRect(u16 xl, u16 yl, u16 xh, u16 yh, u16 color) {
 void TextRenderer::DrawRect(u16 xl, u16 yl, u16 xh, u16 yh, u16 color) {
   MarkCurrentScreenDirtyRect((int)xl, (int)yl, (int)xh, (int)yh);
   int maxHeight = ScreenHeightPx(parent->screen, parent);
+  const u16 maxWidth = (u16)parent->LogicalWidth();
+  const int stride = parent->BufferStride();
   for (u16 x = xl; x < xh; x++) {
-    if (yl < maxHeight && x < (u16)parent->display.width)
-      parent->screen[yl * parent->display.height + x] = color;
-    if (yh - 1 < maxHeight && x < (u16)parent->display.width)
-      parent->screen[(yh - 1) * parent->display.height + x] = color;
+    if (yl < maxHeight && x < maxWidth)
+      parent->screen[yl * stride + x] = color;
+    if (yh - 1 < maxHeight && x < maxWidth)
+      parent->screen[(yh - 1) * stride + x] = color;
   }
   for (u16 y = yl; y < yh; y++) {
-    if (y < maxHeight && xl < (u16)parent->display.width)
-      parent->screen[y * parent->display.height + xl] = color;
-    if (y < maxHeight && xh - 1 < (u16)parent->display.width)
-      parent->screen[y * parent->display.height + xh - 1] = color;
+    if (y < maxHeight && xl < maxWidth)
+      parent->screen[y * stride + xl] = color;
+    if (y < maxHeight && xh - 1 < maxWidth)
+      parent->screen[y * stride + xh - 1] = color;
   }
 }
 
 void TextRenderer::ClearScreen(u16 *screen, u8 r, u8 g, u8 b) {
-  const int logicalHeight =
-      (screen == parent->screenright)
-          ? framebuffer_blit_utils::LogicalTextScreenHeight(false)
-          : parent->display.height;
-  MarkScreenDirtyRect(screen, 0, 0, parent->display.width, logicalHeight);
+  const bool is_left_like = (screen != parent->screenright);
+  const int logicalHeight = parent->LogicalHeightFor(is_left_like);
+  MarkScreenDirtyRect(screen, 0, 0, parent->LogicalWidthFor(is_left_like),
+                      logicalHeight);
   u16 pixel = ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3);
-  for (int i = 0; i < parent->display.width * parent->display.height; i++)
+  const int count = parent->BufferStride() * parent->BufferStride();
+  for (int i = 0; i < count; i++)
     screen[i] = pixel;
 }
 
@@ -351,34 +357,32 @@ void TextRenderer::MarkScreenDirty(u16 *target) {
   if (target == parent->screenleft) {
     parent->screenleft_dirty = true;
     parent->screenleft_dirty_rect = framebuffer_blit_utils::MakeDirtyRect(
-        0, 0, parent->display.width,
-        framebuffer_blit_utils::LogicalTextScreenHeight(true));
+        0, 0, parent->LogicalWidthFor(true), parent->LogicalHeightFor(true));
   } else if (target == parent->screenright) {
     parent->screenright_dirty = true;
     parent->screenright_dirty_rect = framebuffer_blit_utils::MakeDirtyRect(
-        0, 0, parent->display.width,
-        framebuffer_blit_utils::LogicalTextScreenHeight(false));
+        0, 0, parent->LogicalWidthFor(false), parent->LogicalHeightFor(false));
   }
 }
 
 void TextRenderer::MarkScreenDirtyRect(u16 *target, int x0, int y0, int x1,
                                        int y1) {
   framebuffer_blit_utils::DirtyRect *dirty_rect = nullptr;
-  int logical_height = parent->display.height;
+  bool is_left = true;
   if (target == parent->screenleft) {
     parent->screenleft_dirty = true;
     dirty_rect = &parent->screenleft_dirty_rect;
-    logical_height = framebuffer_blit_utils::LogicalTextScreenHeight(true);
   } else if (target == parent->screenright) {
     parent->screenright_dirty = true;
     dirty_rect = &parent->screenright_dirty_rect;
-    logical_height = framebuffer_blit_utils::LogicalTextScreenHeight(false);
+    is_left = false;
   } else {
     return;
   }
 
   framebuffer_blit_utils::ExpandDirtyRect(dirty_rect, x0, y0, x1, y1,
-                                          parent->display.width, logical_height);
+                                          parent->LogicalWidthFor(is_left),
+                                          parent->LogicalHeightFor(is_left));
 }
 
 void TextRenderer::MarkCurrentScreenDirty() { MarkScreenDirty(parent->screen); }
@@ -391,11 +395,9 @@ void TextRenderer::MarkAllScreensDirty() {
   parent->screenleft_dirty = true;
   parent->screenright_dirty = true;
   parent->screenleft_dirty_rect = framebuffer_blit_utils::MakeDirtyRect(
-      0, 0, parent->display.width,
-      framebuffer_blit_utils::LogicalTextScreenHeight(true));
+      0, 0, parent->LogicalWidthFor(true), parent->LogicalHeightFor(true));
   parent->screenright_dirty_rect = framebuffer_blit_utils::MakeDirtyRect(
-      0, 0, parent->display.width,
-      framebuffer_blit_utils::LogicalTextScreenHeight(false));
+      0, 0, parent->LogicalWidthFor(false), parent->LogicalHeightFor(false));
 }
 
 bool TextRenderer::HasDirtyScreens() const {
@@ -415,20 +417,22 @@ bool TextRenderer::BlitToFramebuffer() {
     if (!fb || !src)
       return;
 
+    const int logicalWidth =
+        parent->LogicalWidthFor(src == parent->screenleft);
     const framebuffer_blit_utils::FramebufferGeometry geometry =
         framebuffer_blit_utils::MakeFramebufferGeometry((int)fbW, (int)fbH);
     if (geometry.stride <= 0 || geometry.phys_width <= 0 ||
         geometry.byte_size == 0)
       return;
 #ifdef DSLIBRIS_DEBUG
-    const int max_sx = std::min(parent->display.width, geometry.stride);
+    const int max_sx = std::min(logicalWidth, geometry.stride);
     if (parent->reporter_ && g_blit_geometry_diag_budget > 0 &&
-        (max_sx < parent->display.width ||
+        (max_sx < logicalWidth ||
          (dirty && dirty_rect.valid && dirty_rect.x1 > max_sx))) {
       DBG_LOGF(parent->reporter_,
                "BLIT geom fb=%ux%u stride=%d phys_w=%d logical=%dx%d dirty=%d rect=%d,%d..%d,%d max_sx=%d",
                (unsigned)fbW, (unsigned)fbH, geometry.stride,
-               geometry.phys_width, parent->display.width, (int)logicalHeight,
+               geometry.phys_width, logicalWidth, (int)logicalHeight,
                dirty ? 1 : 0, dirty_rect.x0, dirty_rect.y0, dirty_rect.x1,
                dirty_rect.y1, max_sx);
       g_blit_geometry_diag_budget--;
@@ -439,20 +443,20 @@ bool TextRenderer::BlitToFramebuffer() {
       cache.assign(geometry.byte_size, 0xFF);
       dirty = true;
       dirty_rect =
-          framebuffer_blit_utils::MakeDirtyRect(0, 0, parent->display.width,
+          framebuffer_blit_utils::MakeDirtyRect(0, 0, logicalWidth,
                                                 logicalHeight);
     }
 
     if (dirty) {
       if (dirty_rect.valid) {
         framebuffer_blit_utils::ConvertLogicalRgb565RectToPhysicalBgr888(
-            cache.data(), geometry, src, parent->display.height,
-            parent->display.width, logicalHeight,
+            cache.data(), geometry, src, parent->BufferStride(),
+            logicalWidth, logicalHeight,
             orientation_utils::IsTurnedRight(orientation_), dirty_rect);
       } else {
         framebuffer_blit_utils::ConvertLogicalRgb565ToPhysicalBgr888(
-            cache.data(), geometry, src, parent->display.height,
-            parent->display.width, logicalHeight,
+            cache.data(), geometry, src, parent->BufferStride(),
+            logicalWidth, logicalHeight,
             orientation_utils::IsTurnedRight(orientation_));
       }
       cache_generation++;
@@ -487,14 +491,14 @@ bool TextRenderer::BlitToFramebuffer() {
 
   u8 *fbBottom = gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, &fbW, &fbH);
   blitPage(fbBottom, parent->screenright_fb_cache, parent->screenright,
-           framebuffer_blit_utils::LogicalTextScreenHeight(false),
+           (u16)parent->LogicalHeightFor(false),
            parent->screenright_dirty, parent->screenright_dirty_rect,
            parent->screenright_cache_generation, parent->screenright_hw_sync,
            "bottom/right");
 
   u8 *fbTop = gfxGetFramebuffer(GFX_TOP, GFX_LEFT, &fbW, &fbH);
   blitPage(fbTop, parent->screenleft_fb_cache, parent->screenleft,
-           framebuffer_blit_utils::LogicalTextScreenHeight(true),
+           (u16)parent->LogicalHeightFor(true),
            parent->screenleft_dirty, parent->screenleft_dirty_rect,
            parent->screenleft_cache_generation, parent->screenleft_hw_sync,
            "top/left");

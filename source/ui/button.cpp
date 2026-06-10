@@ -145,7 +145,7 @@ void Button::Draw(u16 *screen, bool highlight) {
   ts->SetStyle(text.style);
 
   const int logicalHeight = ScreenHeightPx(screen, ts);
-  const int stride = ts->display.height;
+  const int stride = ts->BufferStride();
 
   UiButtonIconId resolvedIcon = ResolveIcon();
   bool hasIcon = resolvedIcon != UI_BUTTON_ICON_NONE;

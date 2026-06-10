@@ -18,6 +18,7 @@
 #include <string>
 #include <vector>
 
+#include "shared/text_screen_geometry.h"
 #include "ui/framebuffer_blit_utils.h"
 #include "ui/font_manager.h"
 #include "ui/text_tokens.h"
@@ -74,6 +75,16 @@ public:
 
   Text();
   ~Text();
+
+  //! Row stride of the square software buffers; orientation-independent.
+  int BufferStride() const { return text_screen_geometry::kBufferStridePx; }
+  text_screen_geometry::ScreenGeometry GeometryFor(bool is_left_buffer) const;
+  int LogicalWidthFor(bool is_left_buffer) const;
+  int LogicalHeightFor(bool is_left_buffer) const;
+  //! Logical dimensions of the current target screen.
+  int LogicalWidth() const;
+  int LogicalHeight() const;
+
   void SetReporter(IStatusReporter *reporter);
   IStatusReporter *GetReporter() const;
   void SetFontDir(const std::string &dir);
@@ -182,7 +193,8 @@ private:
   void ReportFace(FT_Face face);
 };
 
-// Returns 400 for the top screen, 320 for the bottom screen.
+// Logical height of the given screen buffer for the active orientation
+// (portrait: 400 top / 320 bottom; landscape: 240 both).
 inline int ScreenHeightPx(const u16 *screen, const Text *ts) {
-  return screen == ts->screenleft ? 400 : 320;
+  return ts->LogicalHeightFor(screen == ts->screenleft);
 }

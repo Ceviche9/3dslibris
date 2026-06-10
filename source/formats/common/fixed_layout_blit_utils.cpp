@@ -31,8 +31,8 @@ void BlitRgb565BitmapScaledCrop(Text *ts, u16 *screen, int logical_height,
   crop_width = std::max(1, std::min(src_width - crop_x, crop_width));
   crop_height = std::max(1, std::min(src_height - crop_y, crop_height));
 
-  const int stride = ts->display.height;
-  const int logical_width = ts->display.width;
+  const int stride = ts->BufferStride();
+  const int logical_width = ts->LogicalWidthFor(screen == ts->screenleft);
   ts->MarkScreenDirtyRect(screen, x, y, x + draw_width, y + draw_height);
 
   if (crop_width == draw_width && crop_height == draw_height) {

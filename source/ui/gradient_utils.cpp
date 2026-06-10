@@ -14,8 +14,8 @@ void DrawToScreen(Text *ts, int color_mode, u16 *target_screen, int logical_h)
 {
   if (!ts || !target_screen)
     return;
-  const int w = ts->display.width;
-  const int stride = ts->display.height;
+  const int w = ts->LogicalWidthFor(target_screen == ts->screenleft);
+  const int stride = ts->BufferStride();
   if (w <= 0 || stride <= 0 || logical_h <= 0)
     return;
 

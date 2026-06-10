@@ -877,8 +877,7 @@ bool Book::DrawInlineImage(Text *ts, u16 image_id,
   auto blit_pixels = [&](const InlineImageCacheEntry &entry, int dst_x,
                          int dst_y) {
     u16 *dst = ts->GetScreen();
-    // 3DS framebuffer is column-major: stride == display.height, not width.
-    const int stride = ts->display.height;
+    const int stride = ts->BufferStride();
     for (int y = 0; y < entry.height; y++) {
       int dy = dst_y + y;
       if (dy < 0 || dy >= screen_h)
