@@ -41,6 +41,7 @@
 #include "shared/boot_trace.h"
 #include "shared/debug_log.h"
 #include "shared/orientation_utils.h"
+#include "shared/touch_map_utils.h"
 #include "shared/path_constants.h"
 #include "parse.h"
 #include "shared/debug_runtime_mode.h"
@@ -311,23 +312,12 @@ touchPosition App::TouchRead()
 {
   touchPosition raw;
   hidTouchRead(&raw); // Get raw touch coordinates from the 3DS hardware.
+
+  const touch_map_utils::TouchPoint point =
+      touch_map_utils::MapRawTouch(orientation, (int)raw.px, (int)raw.py);
   touchPosition mapped;
-
-  if (!orientation_utils::IsTurnedRight(orientation))
-  {
-    // Default "Turned Left" orientation (historical mapping), X un-mirrored.
-    mapped.px = raw.py;       // -> sx
-    mapped.py = 319 - raw.px; // -> sy
-  }
-  else
-  {
-    // "Turned Right" orientation (opposite page rotation), X un-mirrored.
-    mapped.px = 239 - raw.py; // -> sx
-    mapped.py = raw.px;       // -> sy
-  }
-
-  mapped.px = (u16)std::max(0, std::min(239, (int)mapped.px));
-  mapped.py = (u16)std::max(0, std::min(319, (int)mapped.py));
+  mapped.px = (u16)point.x;
+  mapped.py = (u16)point.y;
 
 #if ORIENTATION_DIAG
   if (g_orientation_touch_diag_budget > 0)
