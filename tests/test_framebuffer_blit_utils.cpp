@@ -154,6 +154,93 @@ void TestFramebufferSyncSlotsReusePointers() {
   ExpectEq("second pointer gets slot 1", slot1, 1);
 }
 
+// The pre-landscape transform, kept as a golden reference: portrait offsets
+// must never change or every existing left/right-handed user regresses.
+size_t LegacyPortraitOffsetBytes(
+    const framebuffer_blit_utils::FramebufferGeometry &geometry, int sx,
+    int sy, bool turned_right) {
+  const int dx = turned_right ? sy : (geometry.phys_width - 1 - sy);
+  const int dy = turned_right ? sx : (geometry.stride - 1 - sx);
+  return ((size_t)dx * (size_t)geometry.stride + (size_t)dy) * 3u;
+}
+
+void TestPortraitOffsetsMatchLegacyFormula() {
+  const framebuffer_blit_utils::FramebufferGeometry geometry =
+      framebuffer_blit_utils::MakeFramebufferGeometry(240, 400);
+  for (int sy = 0; sy < 400; sy += 7) {
+    for (int sx = 0; sx < 240; sx += 7) {
+      ExpectEqSize("turned-left golden",
+                   framebuffer_blit_utils::PhysicalOffsetBytes(geometry, sx,
+                                                               sy, 0),
+                   LegacyPortraitOffsetBytes(geometry, sx, sy, false));
+      ExpectEqSize("turned-right golden",
+                   framebuffer_blit_utils::PhysicalOffsetBytes(geometry, sx,
+                                                               sy, 1),
+                   LegacyPortraitOffsetBytes(geometry, sx, sy, true));
+    }
+  }
+}
+
+void TestLandscapeOffsets() {
+  // libctru framebuffers are column-major with the 240px axis as stride:
+  // physical offset = (x * 240 + (239 - y)) * 3 for landscape coords (x, y).
+  const framebuffer_blit_utils::FramebufferGeometry geometry =
+      framebuffer_blit_utils::MakeFramebufferGeometry(240, 400);
+  ExpectEqSize("landscape origin",
+               framebuffer_blit_utils::PhysicalOffsetBytes(geometry, 0, 0, 2),
+               (size_t)239 * 3u);
+  ExpectEqSize("landscape bottom-left",
+               framebuffer_blit_utils::PhysicalOffsetBytes(geometry, 0, 239, 2),
+               (size_t)0);
+  ExpectEqSize("landscape top-right",
+               framebuffer_blit_utils::PhysicalOffsetBytes(geometry, 399, 0, 2),
+               ((size_t)399 * 240u + 239u) * 3u);
+}
+
+void TestOffsetsUniqueAndInBoundsPerOrientation() {
+  const framebuffer_blit_utils::FramebufferGeometry geometry =
+      framebuffer_blit_utils::MakeFramebufferGeometry(240, 400);
+  const unsigned char orientations[] = {0, 1, 2};
+  for (unsigned char orientation : orientations) {
+    const int width = (orientation == 2) ? 400 : 240;
+    const int height = (orientation == 2) ? 240 : 400;
+    std::vector<unsigned char> seen(geometry.byte_size / 3u, 0);
+    for (int sy = 0; sy < height; sy++) {
+      for (int sx = 0; sx < width; sx++) {
+        const size_t off = framebuffer_blit_utils::PhysicalOffsetBytes(
+            geometry, sx, sy, orientation);
+        if (off % 3u != 0 || off + 2 >= geometry.byte_size)
+          Fail("offset out of bounds for orientation " +
+               std::to_string((int)orientation));
+        if (seen[off / 3u])
+          Fail("duplicate physical pixel for orientation " +
+               std::to_string((int)orientation));
+        seen[off / 3u] = 1;
+      }
+    }
+  }
+}
+
+void TestLandscapeConvertCoversFullWidth() {
+  // Regression guard: the converter clamps used to cap logical x at the
+  // 240px stride, which would drop the right 160px of a landscape top screen.
+  const framebuffer_blit_utils::FramebufferGeometry geometry =
+      framebuffer_blit_utils::MakeFramebufferGeometry(240, 400);
+  const int stride = 400;
+  std::vector<unsigned short> logical((size_t)stride * 240u, 0xFFFF);
+  logical[(size_t)0 * stride + 399] = 0xF800; // top-right landscape pixel
+
+  std::vector<unsigned char> physical(geometry.byte_size, 0x00);
+  framebuffer_blit_utils::ConvertLogicalRgb565ToPhysicalBgr888(
+      physical.data(), geometry, logical.data(), stride, 400, 240, 2);
+
+  const size_t off =
+      framebuffer_blit_utils::PhysicalOffsetBytes(geometry, 399, 0, 2);
+  ExpectEqByte("landscape right edge b", physical[off + 0], 0x00);
+  ExpectEqByte("landscape right edge g", physical[off + 1], 0x00);
+  ExpectEqByte("landscape right edge r", physical[off + 2], 0xF8);
+}
+
 void TestFramebufferSyncSkipsFreshCopies() {
   framebuffer_blit_utils::PhysicalFramebufferSyncState sync = {};
   unsigned char fb0[4] = {0};
@@ -177,6 +264,10 @@ int main() {
   TestConvertLogicalScreenToPhysicalCacheTurnedRight();
   TestExpandDirtyRectClampsAndUnions();
   TestConvertLogicalRectToPhysicalCachePreservesOutsidePixels();
+  TestPortraitOffsetsMatchLegacyFormula();
+  TestLandscapeOffsets();
+  TestOffsetsUniqueAndInBoundsPerOrientation();
+  TestLandscapeConvertCoversFullWidth();
   TestFramebufferSyncSlotsReusePointers();
   TestFramebufferSyncSkipsFreshCopies();
   return 0;

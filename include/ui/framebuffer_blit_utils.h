@@ -5,6 +5,8 @@
 #include <cstdint>
 #include <cstring>
 
+#include "shared/orientation_utils.h"
+
 namespace framebuffer_blit_utils {
 
 struct DirtyRect {
@@ -116,16 +118,51 @@ inline void ExpandDirtyRect(DirtyRect *dst, int x0, int y0, int x1, int y1,
   dst->valid = true;
 }
 
+// Maps a logical pixel to its byte offset in the physical framebuffer, whose
+// layout follows the libctru convention: column-major with `stride` (the short
+// 240px axis) per column. Portrait orientations rotate the logical page 90°
+// onto the panel; landscape only flips the vertical axis.
 inline size_t PhysicalOffsetBytes(const FramebufferGeometry &geometry, int sx,
-                                  int sy, bool turned_right) {
-  const int dx = turned_right ? sy : (geometry.phys_width - 1 - sy);
-  const int dy = turned_right ? sx : (geometry.stride - 1 - sx);
+                                  int sy, unsigned char orientation) {
+  int dx, dy;
+  if (orientation_utils::IsLandscape(orientation)) {
+    dx = sx;
+    dy = geometry.stride - 1 - sy;
+  } else if (orientation_utils::IsTurnedRight(orientation)) {
+    dx = sy;
+    dy = sx;
+  } else {
+    dx = geometry.phys_width - 1 - sy;
+    dy = geometry.stride - 1 - sx;
+  }
   return ((size_t)dx * (size_t)geometry.stride + (size_t)dy) * 3u;
+}
+
+// Logical x spans the long physical axis in landscape and the short one in
+// portrait; logical y spans the other. Clamp accordingly so wide landscape
+// rows are not truncated at the 240px stride.
+inline int MaxConvertibleLogicalX(const FramebufferGeometry &geometry,
+                                  int logical_width,
+                                  unsigned char orientation) {
+  const int limit = orientation_utils::IsLandscape(orientation)
+                        ? geometry.phys_width
+                        : geometry.stride;
+  return std::min(logical_width, limit);
+}
+
+inline int MaxConvertibleLogicalY(const FramebufferGeometry &geometry,
+                                  int logical_height,
+                                  unsigned char orientation) {
+  const int limit = orientation_utils::IsLandscape(orientation)
+                        ? geometry.stride
+                        : geometry.phys_width;
+  return std::min(logical_height, limit);
 }
 
 inline void ConvertLogicalRgb565ToPhysicalBgr888(
     uint8_t *dst, const FramebufferGeometry &geometry, const uint16_t *src,
-    int src_stride, int logical_width, int logical_height, bool turned_right) {
+    int src_stride, int logical_width, int logical_height,
+    unsigned char orientation) {
   if (!dst || !src || geometry.stride <= 0 || geometry.phys_width <= 0 ||
       geometry.byte_size == 0 || src_stride <= 0 || logical_width <= 0 ||
       logical_height <= 0) {
@@ -134,12 +171,12 @@ inline void ConvertLogicalRgb565ToPhysicalBgr888(
 
   std::memset(dst, 0xFF, geometry.byte_size);
 
-  const int max_sy = std::min(logical_height, geometry.phys_width);
-  const int max_sx = std::min(logical_width, geometry.stride);
+  const int max_sy = MaxConvertibleLogicalY(geometry, logical_height, orientation);
+  const int max_sx = MaxConvertibleLogicalX(geometry, logical_width, orientation);
   for (int sy = 0; sy < max_sy; sy++) {
     for (int sx = 0; sx < max_sx; sx++) {
       const uint16_t pixel = src[(size_t)sy * (size_t)src_stride + (size_t)sx];
-      const size_t off = PhysicalOffsetBytes(geometry, sx, sy, turned_right);
+      const size_t off = PhysicalOffsetBytes(geometry, sx, sy, orientation);
       dst[off + 0] = (uint8_t)((pixel & 0x1F) << 3);
       dst[off + 1] = (uint8_t)(((pixel >> 5) & 0x3F) << 2);
       dst[off + 2] = (uint8_t)(((pixel >> 11) & 0x1F) << 3);
@@ -149,16 +186,16 @@ inline void ConvertLogicalRgb565ToPhysicalBgr888(
 
 inline void ConvertLogicalRgb565RectToPhysicalBgr888(
     uint8_t *dst, const FramebufferGeometry &geometry, const uint16_t *src,
-    int src_stride, int logical_width, int logical_height, bool turned_right,
-    const DirtyRect &dirty) {
+    int src_stride, int logical_width, int logical_height,
+    unsigned char orientation, const DirtyRect &dirty) {
   if (!dst || !src || !dirty.valid || geometry.stride <= 0 ||
       geometry.phys_width <= 0 || geometry.byte_size == 0 || src_stride <= 0 ||
       logical_width <= 0 || logical_height <= 0) {
     return;
   }
 
-  const int max_sy = std::min(logical_height, geometry.phys_width);
-  const int max_sx = std::min(logical_width, geometry.stride);
+  const int max_sy = MaxConvertibleLogicalY(geometry, logical_height, orientation);
+  const int max_sx = MaxConvertibleLogicalX(geometry, logical_width, orientation);
   const int y0 = std::max(0, std::min(max_sy, dirty.y0));
   const int y1 = std::max(0, std::min(max_sy, dirty.y1));
   const int x0 = std::max(0, std::min(max_sx, dirty.x0));
@@ -169,7 +206,7 @@ inline void ConvertLogicalRgb565RectToPhysicalBgr888(
   for (int sy = y0; sy < y1; sy++) {
     for (int sx = x0; sx < x1; sx++) {
       const uint16_t pixel = src[(size_t)sy * (size_t)src_stride + (size_t)sx];
-      const size_t off = PhysicalOffsetBytes(geometry, sx, sy, turned_right);
+      const size_t off = PhysicalOffsetBytes(geometry, sx, sy, orientation);
       if (pixel == 0xFFFF) {
         dst[off + 0] = 0xFF;
         dst[off + 1] = 0xFF;

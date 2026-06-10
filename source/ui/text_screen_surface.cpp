@@ -451,13 +451,11 @@ bool TextRenderer::BlitToFramebuffer() {
       if (dirty_rect.valid) {
         framebuffer_blit_utils::ConvertLogicalRgb565RectToPhysicalBgr888(
             cache.data(), geometry, src, parent->BufferStride(),
-            logicalWidth, logicalHeight,
-            orientation_utils::IsTurnedRight(orientation_), dirty_rect);
+            logicalWidth, logicalHeight, orientation_, dirty_rect);
       } else {
         framebuffer_blit_utils::ConvertLogicalRgb565ToPhysicalBgr888(
             cache.data(), geometry, src, parent->BufferStride(),
-            logicalWidth, logicalHeight,
-            orientation_utils::IsTurnedRight(orientation_));
+            logicalWidth, logicalHeight, orientation_);
       }
       cache_generation++;
     }
