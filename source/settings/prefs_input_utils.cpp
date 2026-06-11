@@ -10,4 +10,9 @@ bool ShouldReturnFromPrefs(uint32_t keys, bool book_context,
   return (keys & (b_key | select_key | y_key | start_key)) != 0;
 }
 
+bool ShouldRedrawPrefsAfterOverlayInput(bool prefs_dirty,
+                                        bool prefs_mode_active) {
+  return prefs_dirty && prefs_mode_active;
+}
+
 } // namespace prefs_input_utils

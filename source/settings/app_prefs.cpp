@@ -536,7 +536,8 @@ void SettingsController::PrefsHandleEvent() {
     }
     if ((keys & KEY_TOUCH) || (held & KEY_TOUCH))
       go_to_page_dialog_.HandleTouch((keys & KEY_TOUCH) != 0);
-    if (app_.IsPrefsDirty())
+    if (prefs_input_utils::ShouldRedrawPrefsAfterOverlayInput(
+            app_.IsPrefsDirty(), app_.GetMode() == AppMode::Prefs))
       PrefsDraw();
     return;
   }

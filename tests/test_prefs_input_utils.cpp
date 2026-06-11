@@ -43,5 +43,14 @@ int main() {
               prefs_input_utils::ShouldReturnFromPrefs(
                   key_start, true, key_b, key_select, key_y, key_start));
 
+  ExpectTrue("dirty overlay redraws while prefs mode remains active",
+             prefs_input_utils::ShouldRedrawPrefsAfterOverlayInput(true, true));
+  ExpectFalse("touch go must not redraw prefs after switching to book mode",
+              prefs_input_utils::ShouldRedrawPrefsAfterOverlayInput(true,
+                                                                    false));
+  ExpectFalse("clean prefs do not redraw after overlay input",
+              prefs_input_utils::ShouldRedrawPrefsAfterOverlayInput(false,
+                                                                    true));
+
   return 0;
 }
