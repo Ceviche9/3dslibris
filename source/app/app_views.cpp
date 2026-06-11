@@ -33,6 +33,7 @@ namespace
 
 void App::ShowFontView(AppMode app_font_mode)
 {
+  ApplyRenderOrientation(portrait_orientation);
   nav_.mode = AppMode::PrefsFont;
   ts->SetScreen(ts->screenright);
   ts->MarkScreenDirty(ts->screenright);
@@ -48,6 +49,7 @@ void App::ShowFontView(AppMode app_font_mode)
 
 void App::ShowLibraryView()
 {
+  ApplyRenderOrientation(portrait_orientation);
   // Reset shared bottom buttons immediately; prefs view reuses/moves them.
   buttonprev.Move(screen_layout::kFooterLeftX, screen_layout::kFooterY);
   buttonprev.Resize(screen_layout::kFooterNavW, screen_layout::kFooterButtonH);
@@ -146,6 +148,7 @@ bool App::BookNeedsRelayout(Book *book) const
 
 void App::ShowBookmarksView()
 {
+  ApplyRenderOrientation(portrait_orientation);
   nav_.mode = AppMode::Bookmarks;
   ts->SetScreen(ts->screenright);
   bookmarkmenu->Init();
@@ -153,6 +156,7 @@ void App::ShowBookmarksView()
 
 void App::ShowChaptersView()
 {
+  ApplyRenderOrientation(portrait_orientation);
   DBG_LOG(this, "INDEX show begin");
   Book *book = reader_state_.bookcurrent;
   format_t format = FORMAT_UNDEF;
@@ -230,6 +234,7 @@ void App::ShowBookInfoView()
     ShowSettingsView(true);
     return;
   }
+  ApplyRenderOrientation(portrait_orientation);
   buttonprev.Move(screen_layout::kFooterLeftX, screen_layout::kFooterY);
   buttonprev.Resize(screen_layout::kFooterNavW, screen_layout::kFooterButtonH);
   buttonprev.Label("prev");
@@ -253,6 +258,7 @@ void App::ShowCurrentBookView()
 {
   if (!reader_state_.bookcurrent)
     return;
+  ApplyRenderOrientation(orientation);
   nav_.mode = AppMode::Book;
   ts->SetScreen(ts->screenright);
   ts->MarkAllScreensDirty();

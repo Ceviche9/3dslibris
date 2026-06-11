@@ -308,7 +308,8 @@ bool HandleInBook(App &app, Book *book, Text *ts, Prefs * /*prefs*/,
       if (TryFollowTouchLink(book, ts, (int)mapped.px, (int)mapped.py)) {
         status_dirty = true;
       } else {
-        const bool forward_zone = ((int)mapped.px >= 120);
+        const bool forward_zone =
+            ((int)mapped.px >= ts->LogicalWidth() / 2);
         if (!forward_zone) {
           if (book_nav::TurnPage(book, ts, pagecurrent, *pagecount, -1))
             status_dirty = true;

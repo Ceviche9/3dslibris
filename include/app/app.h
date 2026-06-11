@@ -152,6 +152,9 @@ public:
   //! user data block passed to expat callbacks.
   parsedata_t parsedata;
   u8 orientation;
+  u8 portrait_orientation;
+  u8 render_orientation;
+  bool landscape;
   u8 colorMode;
   int reader_font_size;
   int reader_line_spacing;
@@ -308,6 +311,8 @@ public:
   void DrawBottomGradientBackground();
   void DrawTopGradientBackground();
   void SetOrientation(u8 new_orientation);
+  void SetHandedness(u8 portrait_orientation_value);
+  void ApplyRenderOrientation(u8 new_orientation);
   void ShowFontView(AppMode app_mode);
   void ShowLibraryView();
   void ReturnFromPrefs();

@@ -163,6 +163,7 @@ u8 ReaderController::OpenBook()
     app_.SetOpeningOldPosition(relayout_state.old_position);
     app_.MutableOpeningOldBookmarks() = relayout_state.old_bookmarks;
     app_.SetOpeningStartedAtMs(osGetTime());
+    app_.ApplyRenderOrientation(app_.orientation);
     app_.SetMode(AppMode::Opening);
     if (selected_book->StartAsyncReflowOpen(session_id))
     {

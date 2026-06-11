@@ -32,6 +32,7 @@
 #include "formats/common/book_error.h"
 #include "shared/app_flow_utils.h"
 #include "shared/debug_runtime_mode.h"
+#include "shared/orientation_utils.h"
 #include "shared/string_utils.h"
 #include "reader/book_page_nav.h"
 #include "reader/book_switch_utils.h"
@@ -478,7 +479,10 @@ void ReaderController::HandleEventInBook()
   if (app_.ShouldAbortWork() || !bookcurrent_)
     return;
 
-  const ReaderControls ctrl = BuildPortraitControls(app_.key);
+  const ReaderControls ctrl =
+      orientation_utils::IsLandscape(bookcurrent_->GetOrientation())
+          ? BuildLandscapeControls(app_.key)
+          : BuildPortraitControls(app_.key);
   const u32 keys = hidKeysDown();
   const u32 held = hidKeysHeld();
   const u16 position_before = bookcurrent_->GetPosition();

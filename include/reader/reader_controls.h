@@ -8,7 +8,6 @@
 // All DPad assignments assume the device is held in portrait (rotated clockwise):
 //   dleft  = physically down on screen = reading forward
 //   dright = physically up on screen   = reading backward
-// To add landscape support, define a BuildLandscapeControls() factory.
 
 struct ReaderControls
 {
@@ -49,6 +48,27 @@ inline ReaderControls BuildPortraitControls(const KeyMap &key)
   // dleft = physically down in portrait = forward; dright = up = backward
   c.link_next = key.ddown | key.dleft;
   c.link_prev = key.dup | key.dright;
+  c.fixed_page_next = key.dright;
+  c.fixed_page_prev = key.dleft;
+  c.fixed_chapter_next = key.ddown;
+  c.fixed_chapter_prev = key.dup;
+  c.zoom_in = key.a;
+  c.zoom_out = key.b;
+  c.back_to_library = key.start;
+  c.open_settings = key.select;
+  return c;
+}
+
+template <typename KeyMap>
+inline ReaderControls BuildLandscapeControls(const KeyMap &key)
+{
+  ReaderControls c;
+  c.page_next = key.a | key.r | key.right | key.dright | key.zl;
+  c.page_prev = key.b | key.l | key.left | key.dleft | key.zr;
+  c.bookmark_next = key.down | key.ddown;
+  c.bookmark_prev = key.up | key.dup;
+  c.link_next = key.down | key.ddown;
+  c.link_prev = key.up | key.dup;
   c.fixed_page_next = key.dright;
   c.fixed_page_prev = key.dleft;
   c.fixed_chapter_next = key.ddown;

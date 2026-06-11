@@ -104,6 +104,9 @@ App::App()
   nav_.mode = AppMode::Browser;
   cache = false;
   orientation = orientation_utils::ORIENT_TURNED_LEFT;
+  portrait_orientation = orientation_utils::ORIENT_TURNED_LEFT;
+  render_orientation = orientation_utils::ORIENT_TURNED_LEFT;
+  landscape = false;
   reader_font_size = 12;
   reader_line_spacing = 0;
   paraspacing = 0;
@@ -314,7 +317,8 @@ touchPosition App::TouchRead()
   hidTouchRead(&raw); // Get raw touch coordinates from the 3DS hardware.
 
   const touch_map_utils::TouchPoint point =
-      touch_map_utils::MapRawTouch(orientation, (int)raw.px, (int)raw.py);
+      touch_map_utils::MapRawTouch(render_orientation, (int)raw.px,
+                                   (int)raw.py);
   touchPosition mapped;
   mapped.px = (u16)point.x;
   mapped.py = (u16)point.y;
@@ -337,12 +341,14 @@ touchPosition App::TouchRead()
 
 void App::DrawBottomGradientBackground()
 {
-  gradient_utils::DrawToScreen(ts.get(), colorMode, ts->screenright, screen_dims::kBottomScreenHeightPx);
+  gradient_utils::DrawToScreen(ts.get(), colorMode, ts->screenright,
+                               ts->LogicalHeightFor(false));
 }
 
 void App::DrawTopGradientBackground()
 {
-  gradient_utils::DrawToScreen(ts.get(), colorMode, ts->screenleft, screen_dims::kTopScreenHeightPx);
+  gradient_utils::DrawToScreen(ts.get(), colorMode, ts->screenleft,
+                               ts->LogicalHeightFor(true));
 }
 
 // Show the font selection menu, initializing it with the specified font mode (regular, bold, italic, etc.).
@@ -357,11 +363,39 @@ void App::UpdateStatus() { status_controller_->UpdateStatus(); }
 // input mapping, button layout, and mark screens dirty for redraw.
 void App::SetOrientation(u8 new_orientation)
 {
-  // Keep software render orientation in sync with the current handedness.
-  // TODO: rotating the whole console should also rotate/remap the physical
-  // D-pad semantics for reader controls, not only the shoulder buttons.
-  const bool turned_right = orientation_utils::IsTurnedRight(new_orientation);
-  orientation = new_orientation;
+  if (orientation_utils::IsLandscape(new_orientation)) {
+    landscape = true;
+  } else {
+    landscape = false;
+    portrait_orientation = orientation_utils::IsTurnedRight(new_orientation)
+                               ? orientation_utils::ORIENT_TURNED_RIGHT
+                               : orientation_utils::ORIENT_TURNED_LEFT;
+  }
+  orientation = landscape ? orientation_utils::ORIENT_LANDSCAPE
+                          : portrait_orientation;
+  const bool reading_view =
+      nav_.mode == AppMode::Book || nav_.mode == AppMode::Opening;
+  ApplyRenderOrientation(reading_view ? orientation : portrait_orientation);
+}
+
+void App::SetHandedness(u8 portrait_orientation_value)
+{
+  portrait_orientation =
+      orientation_utils::IsTurnedRight(portrait_orientation_value)
+          ? orientation_utils::ORIENT_TURNED_RIGHT
+          : orientation_utils::ORIENT_TURNED_LEFT;
+  if (!landscape)
+    orientation = portrait_orientation;
+  const bool reading_view =
+      nav_.mode == AppMode::Book || nav_.mode == AppMode::Opening;
+  ApplyRenderOrientation(reading_view ? orientation : portrait_orientation);
+}
+
+void App::ApplyRenderOrientation(u8 new_orientation)
+{
+  const bool turned_right =
+      orientation_utils::IsTurnedRight(portrait_orientation);
+  render_orientation = new_orientation;
   if (ts)
   {
     ts->SetOrientation(new_orientation);

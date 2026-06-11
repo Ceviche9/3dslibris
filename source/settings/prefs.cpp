@@ -21,6 +21,7 @@
 #include "formats/common/xml_parse_utils.h"
 #include "library/browser_view_utils.h"
 #include "shared/path_constants.h"
+#include "shared/orientation_utils.h"
 #include "shared/utf8_utils.h"
 #include "settings/font_config_utils.h"
 #include "sys/stat.h"
@@ -89,6 +90,8 @@ void start(void *data, const XML_Char *name, const XML_Char **attr) {
       if (!strcmp(attr[i], "modtime"))
         p->prefs->modtime = atoi(attr[i + 1]);
   } else if (!strcmp(name, "screen")) {
+    int portrait_orientation = app->portrait_orientation;
+    bool landscape = app->landscape;
     for (i = 0; attr[i]; i += 2) {
       if (!strcmp(attr[i], "brightness")) {
         // Ignored on 3DS (brightness is system-managed).
@@ -98,9 +101,17 @@ void start(void *data, const XML_Char *name, const XML_Char **attr) {
         ts->SetColorMode(mode);
         UiButtonSkin_SetColorMode(mode);
       } else if (!strcmp(attr[i], "flip")) {
-        app->orientation = atoi(attr[i + 1]);
+        portrait_orientation = atoi(attr[i + 1])
+                                   ? orientation_utils::ORIENT_TURNED_RIGHT
+                                   : orientation_utils::ORIENT_TURNED_LEFT;
+      } else if (!strcmp(attr[i], "landscape")) {
+        landscape = atoi(attr[i + 1]) != 0;
       }
     }
+    app->portrait_orientation = (u8)portrait_orientation;
+    app->landscape = landscape;
+    app->orientation = landscape ? orientation_utils::ORIENT_LANDSCAPE
+                                 : app->portrait_orientation;
   } else if (!strcmp(name, "paragraph")) {
     for (i = 0; attr[i]; i += 2) {
       if (!strcmp(attr[i], "spacing"))
@@ -565,9 +576,13 @@ int Prefs::Write() {
           fixed_layout_rtl ? 1 : 0,
           circle_pad_page_turn ? 1 : 0,
           static_cast<int>(library_sort_mode));
-  fprintf(fp, "\t<screen colorMode=\"%d\" flip=\"%d\" />\n",
+  fprintf(fp,
+          "\t<screen colorMode=\"%d\" flip=\"%d\" landscape=\"%d\" />\n",
           ts ? ts->GetColorMode() : 0,
-          app ? app->orientation : 0);
+          app && orientation_utils::IsTurnedRight(app->portrait_orientation)
+              ? 1
+              : 0,
+          app && app->landscape ? 1 : 0);
   fprintf(fp,
           "\t<margin top=\"%d\" left=\"%d\" bottom=\"%d\" right=\"%d\" />\n",
           ts ? ts->margin.top : 0, ts ? ts->margin.left : 0,
