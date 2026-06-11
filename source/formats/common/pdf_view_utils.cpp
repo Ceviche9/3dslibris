@@ -59,6 +59,11 @@ int ClampZoomIndexForDevice(int zoom_index, bool is_new_3ds) {
   return clamped;
 }
 
+int ClampInteractiveZoomIndexForDevice(int zoom_index, bool is_new_3ds) {
+  return std::max(DefaultZoomIndex(),
+                  ClampZoomIndexForDevice(zoom_index, is_new_3ds));
+}
+
 int DefaultZoomIndex() { return 2; }
 
 float ZoomForIndex(int zoom_index) {
@@ -104,20 +109,15 @@ NormalizedRect ComputeViewportRect(float page_width, float page_height,
     return out;
   }
 
-  const float fit_scale =
-      std::min(screen_width / page_width, screen_height / page_height);
-  if (fit_scale <= 0.0f)
+  const float cover_scale =
+      std::max(screen_width / page_width, screen_height / page_height);
+  if (cover_scale <= 0.0f)
     return out;
 
-  const float scaled_page_width = page_width * fit_scale * zoom;
-  const float scaled_page_height = page_height * fit_scale * zoom;
   const float visible_page_width =
-      std::min(page_width, screen_width / (fit_scale * zoom));
+      std::min(page_width, screen_width / (cover_scale * zoom));
   const float visible_page_height =
-      std::min(page_height, screen_height / (fit_scale * zoom));
-
-  (void)scaled_page_width;
-  (void)scaled_page_height;
+      std::min(page_height, screen_height / (cover_scale * zoom));
 
   out.width = Clamp01(visible_page_width / page_width);
   out.height = Clamp01(visible_page_height / page_height);

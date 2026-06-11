@@ -567,8 +567,8 @@ bool Book::ChangeCbzZoom(int delta) {
 
   const int next = std::min(
       cbz_state->viewport.max_zoom_index,
-      pdf_view_utils::ClampZoomIndexForDevice(cbz_state->viewport.zoom_index + delta,
-                                              cbz_state->is_new_3ds));
+      pdf_view_utils::ClampInteractiveZoomIndexForDevice(
+          cbz_state->viewport.zoom_index + delta, cbz_state->is_new_3ds));
   if (next == cbz_state->viewport.zoom_index)
     return false;
 

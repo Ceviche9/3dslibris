@@ -66,8 +66,8 @@ pdf_view_utils::NormalizedRect ComputeMuPdfViewportRect(
           std::max(1.0f, page_width * nav.width),
           std::max(1.0f, page_height * nav.height),
           ComputeEffectiveMuPdfZoom(document_kind, zoom_index),
-          (float)kPdfZoomScreenWidth,
-          (float)kPdfZoomScreenHeight, local_center_x, local_center_y);
+          (float)kPdfZoomScreenWidth, (float)kPdfZoomScreenHeight,
+          local_center_x, local_center_y);
 
   out.left = nav.left + local.left * nav.width;
   out.top = nav.top + local.top * nav.height;
@@ -156,8 +156,8 @@ bool Book::ChangeMuPdfZoom(int delta) {
     return false;
   const int next = std::min(
       mupdf_state->viewport.max_zoom_index,
-      pdf_view_utils::ClampZoomIndexForDevice(mupdf_state->viewport.zoom_index + delta,
-                                              mupdf_state->is_new_3ds));
+      pdf_view_utils::ClampInteractiveZoomIndexForDevice(
+          mupdf_state->viewport.zoom_index + delta, mupdf_state->is_new_3ds));
   if (next == mupdf_state->viewport.zoom_index)
     return false;
   mupdf_state->viewport.zoom_index = next;

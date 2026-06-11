@@ -69,6 +69,13 @@ void TestDevicePolicies() {
            pdf_view_utils::ClampZoomIndexForDevice(99, false), 6);
   ExpectEq("new 3ds clamps to top zoom tier",
            pdf_view_utils::ClampZoomIndexForDevice(99, true), 6);
+
+  ExpectEq("interactive zoom cannot go below fit",
+           pdf_view_utils::ClampInteractiveZoomIndexForDevice(-99, false), 2);
+  ExpectEq("interactive zoom keeps levels above fit",
+           pdf_view_utils::ClampInteractiveZoomIndexForDevice(3, false), 3);
+  ExpectEq("interactive zoom keeps device maximum",
+           pdf_view_utils::ClampInteractiveZoomIndexForDevice(99, true), 6);
 }
 
 void TestPreviewFit() {
@@ -123,14 +130,23 @@ void TestTouchMovementThreshold() {
                                                            3));
 }
 
-void TestViewportAtFitZoomCoversWholePage() {
+void TestViewportAtMinimumZoomMatchesScreenAspect() {
   pdf_view_utils::NormalizedRect rect =
       pdf_view_utils::ComputeViewportRect(1000.0f, 2000.0f, 1.0f, 400.0f,
                                           240.0f, 0.5f, 0.5f);
-  ExpectNear("fit zoom width covers page", rect.width, 1.0f);
-  ExpectNear("fit zoom height covers page", rect.height, 1.0f);
-  ExpectNear("fit zoom left", rect.left, 0.0f);
-  ExpectNear("fit zoom top", rect.top, 0.0f);
+  ExpectNear("minimum zoom uses full portrait page width", rect.width, 1.0f);
+  ExpectNear("minimum zoom crops portrait height to screen aspect", rect.height,
+             0.3f);
+  ExpectNear("minimum zoom portrait left", rect.left, 0.0f);
+  ExpectNear("minimum zoom portrait top", rect.top, 0.35f);
+  ExpectNear("minimum zoom crop aspect matches screen",
+             (rect.width * 1000.0f) / (rect.height * 2000.0f),
+             400.0f / 240.0f);
+
+  rect = pdf_view_utils::ComputeViewportRect(1000.0f, 600.0f, 1.0f,
+                                             400.0f, 240.0f, 0.5f, 0.5f);
+  ExpectNear("matching page aspect keeps full width", rect.width, 1.0f);
+  ExpectNear("matching page aspect keeps full height", rect.height, 1.0f);
 }
 
 } // namespace
@@ -142,6 +158,6 @@ int main() {
   TestPreviewFitInsideInsetBounds();
   TestViewportClampAndTouchRecenter();
   TestTouchMovementThreshold();
-  TestViewportAtFitZoomCoversWholePage();
+  TestViewportAtMinimumZoomMatchesScreenAspect();
   return 0;
 }

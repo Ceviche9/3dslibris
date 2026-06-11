@@ -35,6 +35,7 @@ struct NormalizedPoint {
 
 int ClampZoomIndex(int zoom_index);
 int ClampZoomIndexForDevice(int zoom_index, bool is_new_3ds);
+int ClampInteractiveZoomIndexForDevice(int zoom_index, bool is_new_3ds);
 int DefaultZoomIndex();
 DevicePolicy GetDevicePolicy(bool is_new_3ds);
 float ZoomForIndex(int zoom_index);
