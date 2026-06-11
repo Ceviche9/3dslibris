@@ -80,6 +80,21 @@ void TestReadingScreenIndexForPhysicalScreen() {
            ResolveReadingScreenIndexForPhysicalScreen(true, false), 0);
 }
 
+void TestLandscapeReadingScreenGeometry() {
+  InlineImageScreenLayout layout =
+      ResolveInlineImageScreenLayoutForOrientation(2, 0, 36, 10);
+  ExpectEq("landscape first width", layout.current_screen_width, 400);
+  ExpectEq("landscape first height", layout.current_screen_height, 240);
+  ExpectEq("landscape first bottom margin", layout.current_margin_bottom, 0);
+  ExpectEq("landscape next width", layout.next_screen_width, 320);
+  ExpectEq("landscape next height", layout.next_screen_height, 240);
+  ExpectEq("landscape next bottom margin", layout.next_margin_bottom, 22);
+
+  layout = ResolveInlineImageScreenLayoutForOrientation(2, 1, 36, 10);
+  ExpectEq("landscape second width", layout.current_screen_width, 320);
+  ExpectEq("landscape second next width", layout.next_screen_width, 400);
+}
+
 } // namespace
 
 int main() {
@@ -89,5 +104,6 @@ int main() {
   TestReadingOrderDefaultOrientation();
   TestReadingOrderTurnedRightOrientation();
   TestReadingScreenIndexForPhysicalScreen();
+  TestLandscapeReadingScreenGeometry();
   return 0;
 }

@@ -145,11 +145,13 @@ void TestResolveReadingScreenMetricsForOrientation() {
     }
   }
 
-  // Landscape: both screens 240 tall; top compact, bottom HUD strip + guard.
+  // Landscape: both screens are 240 px tall. The top has no HUD, so it only
+  // needs the pagination safety guard. The bottom reserves HUD + guard.
   const text_render_layout_utils::ReadingScreenMetrics top =
       ResolveReadingScreenMetricsForOrientation(2, 0, 36, 16);
   ExpectEq("landscape top max_height", top.max_height, 240);
-  ExpectEq("landscape top bottom_margin", top.bottom_margin, 20);
+  ExpectEq("landscape top bottom_margin", top.bottom_margin,
+           text_render_layout_utils::kFullReadingScreenFooterGuardPx);
 
   const text_render_layout_utils::ReadingScreenMetrics bottom =
       ResolveReadingScreenMetricsForOrientation(2, 1, 36, 16);
@@ -157,6 +159,53 @@ void TestResolveReadingScreenMetricsForOrientation() {
   ExpectEq("landscape bottom bottom_margin", bottom.bottom_margin,
            text_render_layout_utils::kLandscapeHudStripPx +
                text_render_layout_utils::kFullReadingScreenFooterGuardPx);
+}
+
+void TestResolveReadingScreenRenderBottomMarginForOrientation() {
+  using text_render_layout_utils::ResolveReadingScreenRenderBottomMarginForOrientation;
+
+  ExpectEq("turned-left first render margin",
+           ResolveReadingScreenRenderBottomMarginForOrientation(0, 0, 36, 16),
+           36);
+  ExpectEq("turned-left second render margin",
+           ResolveReadingScreenRenderBottomMarginForOrientation(0, 1, 36, 16),
+           16);
+  ExpectEq("turned-right first render margin",
+           ResolveReadingScreenRenderBottomMarginForOrientation(1, 0, 36, 16),
+           16);
+  ExpectEq("turned-right second render margin",
+           ResolveReadingScreenRenderBottomMarginForOrientation(1, 1, 36, 16),
+           36);
+  ExpectEq("landscape top render uses full physical height",
+           ResolveReadingScreenRenderBottomMarginForOrientation(2, 0, 36, 16),
+           0);
+  ExpectEq("landscape bottom render margin stops at HUD",
+           ResolveReadingScreenRenderBottomMarginForOrientation(2, 1, 36, 16),
+           text_render_layout_utils::kLandscapeHudStripPx);
+}
+
+void TestLandscapeTopRendererKeepsPaginationGuardOutsideClip() {
+  const int line_height = 12;
+  const int line_spacing = 0;
+  const int pen_y = 220;
+  const text_render_layout_utils::ReadingScreenMetrics metrics =
+      text_render_layout_utils::ResolveReadingScreenMetricsForOrientation(
+          2, 0, 36, 20);
+  const int render_margin = text_render_layout_utils::
+      ResolveReadingScreenRenderBottomMarginForOrientation(2, 0, 36, 20);
+  const int next_y = pen_y + line_height + line_spacing;
+
+  ExpectTrue("landscape paginator admits final guarded top-screen line",
+             text_render_layout_utils::HasRoomForFollowingLine(
+                 pen_y, line_height, line_spacing, metrics.max_height,
+                 metrics.bottom_margin));
+  ExpectTrue("landscape renderer admits the same top-screen line",
+             text_render_layout_utils::CurrentLineFitsScreen(
+                 next_y, line_height, line_spacing, metrics.max_height,
+                 render_margin));
+  ExpectEq("landscape top clip leaves the full guard after final baseline",
+           metrics.max_height - render_margin - next_y,
+           text_render_layout_utils::kFullReadingScreenFooterGuardPx);
 }
 
 void TestReadingScreenHeightPxForOrientation() {
@@ -354,6 +403,8 @@ int main() {
   TestResolveReadingScreenMetrics();
   TestResolveReadingScreenMetricsForReadingScreen();
   TestResolveReadingScreenMetricsForOrientation();
+  TestResolveReadingScreenRenderBottomMarginForOrientation();
+  TestLandscapeTopRendererKeepsPaginationGuardOutsideClip();
   TestReadingScreenHeightPxForOrientation();
   TestResolveCompactReadingBottomMargin();
   TestWouldOverflowReadingScreen();

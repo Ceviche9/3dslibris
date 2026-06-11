@@ -1,4 +1,5 @@
 #include "shared/text_screen_geometry.h"
+#include "formats/common/fixed_layout_screen_constants.h"
 
 #include "shared/orientation_utils.h"
 
@@ -78,6 +79,18 @@ void TestOrientationPredicates() {
     Fail("FirstScreenIsLeft must be false only for ORIENT_TURNED_RIGHT");
 }
 
+void TestFixedLayoutTargetDimensions() {
+  fixed_layout_screen::TargetDimensions top =
+      fixed_layout_screen::TargetDims(orientation_utils::ORIENT_LANDSCAPE,
+                                      true);
+  fixed_layout_screen::TargetDimensions bottom =
+      fixed_layout_screen::TargetDims(orientation_utils::ORIENT_LANDSCAPE,
+                                      false);
+  if (top.width != 400 || top.height != 240 || bottom.width != 320 ||
+      bottom.height != 240)
+    Fail("fixed-layout landscape target dimensions mismatch");
+}
+
 } // namespace
 
 int main() {
@@ -85,6 +98,7 @@ int main() {
   TestLandscapeGeometry();
   TestGeometryFitsBufferStride();
   TestOrientationPredicates();
+  TestFixedLayoutTargetDimensions();
   std::printf("All text_screen_geometry tests passed.\n");
   return 0;
 }

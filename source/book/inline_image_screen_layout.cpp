@@ -3,6 +3,7 @@
 #include "app/status_layout_utils.h"
 #include "shared/screen_dimensions.h"
 #include "shared/text_render_layout_utils.h"
+#include "shared/text_screen_geometry.h"
 
 namespace {
 
@@ -25,6 +26,8 @@ InlineImageScreenLayout ResolveInlineImageScreenLayout(
       ResolveFullReadingImageBottomMargin(screen_dims::kTopScreenHeightPx, line_height, full_bottom_margin);
 
   InlineImageScreenLayout layout{};
+  layout.current_screen_width = screen_dims::kTopScreenWidthPx;
+  layout.next_screen_width = screen_dims::kTopScreenWidthPx;
   if (current_screen_is_left) {
     layout.current_screen_height = screen_dims::kTopScreenHeightPx;
     layout.current_margin_bottom = content_full_bottom_margin;
@@ -36,6 +39,41 @@ InlineImageScreenLayout ResolveInlineImageScreenLayout(
     layout.next_screen_height = screen_dims::kTopScreenHeightPx;
     layout.next_margin_bottom = content_full_bottom_margin;
   }
+  return layout;
+}
+
+InlineImageScreenLayout ResolveInlineImageScreenLayoutForOrientation(
+    unsigned char orientation, int current_screen, int full_bottom_margin,
+    int line_height) {
+  if (!orientation_utils::IsLandscape(orientation)) {
+    return ResolveInlineImageScreenLayoutForReadingScreen(
+        orientation_utils::IsTurnedRight(orientation), current_screen,
+        full_bottom_margin, line_height);
+  }
+
+  InlineImageScreenLayout layout{};
+  const text_screen_geometry::ScreenGeometry current_geometry =
+      text_screen_geometry::ResolveReadingScreenGeometry(orientation,
+                                                         current_screen);
+  const text_screen_geometry::ScreenGeometry next_geometry =
+      text_screen_geometry::ResolveReadingScreenGeometry(
+          orientation, current_screen == 0 ? 1 : 0);
+  layout.current_screen_width = current_geometry.width;
+  layout.current_screen_height = current_geometry.height;
+  layout.current_margin_bottom =
+      text_render_layout_utils::
+          ResolveReadingScreenRenderBottomMarginForOrientation(
+              orientation, current_screen, full_bottom_margin,
+              text_render_layout_utils::ResolveCompactReadingBottomMargin(
+                  full_bottom_margin));
+  layout.next_screen_width = next_geometry.width;
+  layout.next_screen_height = next_geometry.height;
+  layout.next_margin_bottom =
+      text_render_layout_utils::
+          ResolveReadingScreenRenderBottomMarginForOrientation(
+              orientation, current_screen == 0 ? 1 : 0, full_bottom_margin,
+              text_render_layout_utils::ResolveCompactReadingBottomMargin(
+                  full_bottom_margin));
   return layout;
 }
 

@@ -205,10 +205,15 @@ void Page::Draw(Text *ts) {
   const int rightBottomMargin =
     text_render_layout_utils::ResolveCompactReadingBottomMargin(
         ts->margin.bottom);
-  const bool turned_right =
-      (book && orientation_utils::IsTurnedRight(book->GetOrientation()));
-  u16 *first_screen = turned_right ? ts->screenright : ts->screenleft;
-  u16 *second_screen = turned_right ? ts->screenleft : ts->screenright;
+  const unsigned char orientation =
+      book ? (unsigned char)book->GetOrientation()
+           : orientation_utils::ORIENT_TURNED_LEFT;
+  const bool first_screen_is_left =
+      orientation_utils::FirstScreenIsLeft(orientation);
+  u16 *first_screen =
+      first_screen_is_left ? ts->screenleft : ts->screenright;
+  u16 *second_screen =
+      first_screen_is_left ? ts->screenright : ts->screenleft;
 
   //! Write to offscreen buffer, then blit to video memory, for both screens.
   ts->InitPen();
@@ -237,12 +242,22 @@ void Page::Draw(Text *ts) {
   ts->SetScreen(first_screen);
 #endif
 
-  // Cache screen-dependent values to avoid repeated comparisons in the hot loop.
-  // first_screen == screenleft → leftBottomMargin, maxHeight=400
-  // first_screen == screenright → rightBottomMargin, maxHeight=320
-  const bool first_is_left = (first_screen == ts->screenleft);
-  const int second_bottom_margin = first_is_left ? rightBottomMargin : leftBottomMargin;
+  // Cache render margins by reading order. In portrait they map to the physical
+  // left/right panels; in landscape they map to top/bottom HUD geometry.
+  const int first_render_bottom_margin =
+      text_render_layout_utils::
+          ResolveReadingScreenRenderBottomMarginForOrientation(
+              orientation, 0, leftBottomMargin, rightBottomMargin);
+  const int second_render_bottom_margin =
+      text_render_layout_utils::
+          ResolveReadingScreenRenderBottomMarginForOrientation(
+              orientation, 1, leftBottomMargin, rightBottomMargin);
   bool on_first_screen = true;
+  auto current_reading_metrics = [&]() {
+    return text_render_layout_utils::ResolveReadingScreenMetricsForOrientation(
+        orientation, on_first_screen ? 0 : 1, leftBottomMargin,
+        rightBottomMargin);
+  };
 
 #if defined(DSLIBRIS_DEBUG) && PAGE_RENDER_TRACE
   std::string render_line_text;
@@ -267,8 +282,8 @@ void Page::Draw(Text *ts) {
     if (!render_line_started)
       return;
     const text_render_layout_utils::ReadingScreenMetrics metrics =
-        text_render_layout_utils::ResolveReadingScreenMetrics(
-            render_line_screen == 0, first_is_left, leftBottomMargin,
+        text_render_layout_utils::ResolveReadingScreenMetricsForOrientation(
+            orientation, render_line_screen, leftBottomMargin,
             rightBottomMargin);
     DBG_LOGF_CAT(
         ts->GetReporter(), DBG_LEVEL_DEBUG, DBG_CAT_EPUB,
@@ -276,7 +291,10 @@ void Page::Draw(Text *ts) {
         event ? event : "line", render_line_screen, render_line_y,
         (int)ts->GetPenX(), (int)ts->GetPenY(), ts->GetHeight(),
         ts->linespacing, metrics.max_height, metrics.bottom_margin,
-        render_line_screen == 0 ? leftBottomMargin : rightBottomMargin,
+        text_render_layout_utils::
+            ResolveReadingScreenRenderBottomMarginForOrientation(
+                orientation, render_line_screen, leftBottomMargin,
+                rightBottomMargin),
         text_render_layout_utils::CurrentLineFitsScreen(
             render_line_y, ts->GetHeight(), ts->linespacing,
             metrics.max_height, metrics.bottom_margin)
@@ -289,12 +307,13 @@ void Page::Draw(Text *ts) {
   DBG_LOGF_CAT(
       ts->GetReporter(), DBG_LEVEL_DEBUG, DBG_CAT_EPUB,
       "LINETRACE render footer first_left=%d leftBottom=%d rightBottom=%d guard_left=%d guard_right=%d first_screen=%s px=%d h=%d",
-      first_is_left ? 1 : 0, leftBottomMargin, rightBottomMargin,
-      text_render_layout_utils::ResolveReadingScreenMetrics(
-          true, first_is_left, leftBottomMargin, rightBottomMargin)
+      first_screen == ts->screenleft ? 1 : 0, leftBottomMargin,
+      rightBottomMargin,
+      text_render_layout_utils::ResolveReadingScreenMetricsForOrientation(
+          orientation, 0, leftBottomMargin, rightBottomMargin)
           .bottom_margin,
-      text_render_layout_utils::ResolveReadingScreenMetrics(
-          false, first_is_left, leftBottomMargin, rightBottomMargin)
+      text_render_layout_utils::ResolveReadingScreenMetricsForOrientation(
+          orientation, 1, leftBottomMargin, rightBottomMargin)
           .bottom_margin,
       first_screen == ts->screenleft ? "left" : "right", (int)ts->GetPixelSize(),
       ts->GetHeight());
@@ -314,7 +333,7 @@ void Page::Draw(Text *ts) {
       ts->SetScreen(second_screen);
 #endif
       on_first_screen = false;
-      ts->margin.bottom = second_bottom_margin;
+      ts->margin.bottom = second_render_bottom_margin;
       if (book) {
         if (ts->GetScreen() == ts->screenright)
           book->DrawBottomGradientBackground();
@@ -337,13 +356,12 @@ void Page::Draw(Text *ts) {
     }
     return false;
   };
-  // Keep ts->margin.bottom at the unguarded render margin (leftBottomMargin or
-  // rightBottomMargin). The +8px footer guard from ResolveReadingScreenMetrics
-  // is used only as the overflow threshold in WouldOverflowReadingScreen calls,
-  // NOT as the pixel clip boundary. If we set ts->margin.bottom to the guarded
-  // value the renderer clips descenders too early (at 400-44=356 instead of
-  // the correct 400-36=364).
-  ts->margin.bottom = first_is_left ? leftBottomMargin : rightBottomMargin;
+  // Keep ts->margin.bottom at the orientation-aware unguarded render margin.
+  // The footer guard from ResolveReadingScreenMetrics is only the pagination
+  // threshold, not the pixel clip boundary. Using the physical left-screen
+  // margin here in landscape makes TextRenderer advance before Page does and
+  // desynchronizes their active-screen state.
+  ts->margin.bottom = first_render_bottom_margin;
   // Clear both page buffers through Text API so dirty flags stay coherent.
   ts->SetScreen(ts->screenleft);
   if (book) {
@@ -459,9 +477,7 @@ void Page::Draw(Text *ts) {
       next_image_author_width = 0;
 
       const text_render_layout_utils::ReadingScreenMetrics metrics =
-          text_render_layout_utils::ResolveReadingScreenMetrics(
-              on_first_screen, first_is_left, leftBottomMargin,
-              rightBottomMargin);
+          current_reading_metrics();
       int maxHeight = metrics.max_height;
       // currentBottomMargin includes the 8px footer guard: used only for the
       // overflow threshold check, NOT written back to ts->margin.bottom so the
@@ -486,7 +502,7 @@ void Page::Draw(Text *ts) {
           ts->SetScreen(second_screen);
 #endif
           on_first_screen = false;
-          ts->margin.bottom = second_bottom_margin;
+          ts->margin.bottom = second_render_bottom_margin;
           if (book) {
             if (ts->GetScreen() == ts->screenright)
               book->DrawBottomGradientBackground();
@@ -535,7 +551,8 @@ void Page::Draw(Text *ts) {
         ts->PrintNewLine();
     } else if (c == TEXT_LINE_START_X) {
       if (i + 1 < length) {
-        const int x = std::max(0, std::min((int)buf[i + 1], ts->display.width));
+        const int x =
+            std::max(0, std::min((int)buf[i + 1], ts->LogicalWidth()));
         ts->SetPen((u16)x, ts->GetPenY());
       }
       ts->linebegan = false;
@@ -624,7 +641,7 @@ void Page::Draw(Text *ts) {
     } else if (c == TEXT_HR) {
       i++;
       const int x0 = ts->margin.left;
-      const int x1 = ts->display.width - ts->margin.right;
+      const int x1 = ts->LogicalWidth() - ts->margin.right;
       // Draw the rule slightly below centre of the line box so it sits between
       // the preceding and following text rather than within the ascender zone.
       const int y = std::max(ts->margin.top,
@@ -641,7 +658,7 @@ void Page::Draw(Text *ts) {
       i++;
       const int x0 = (i < length) ? (int)buf[i++] : ts->margin.left;
       const int x1 = (i < length) ? (int)buf[i++]
-                                   : ts->display.width - ts->margin.right;
+                                   : ts->LogicalWidth() - ts->margin.right;
       const int y = std::max(ts->margin.top,
                              ts->GetPenY() - std::max(1, ts->GetHeight() / 3));
       ts->FillRect(x0, y, x1, y + 1, ts->GetFgColor());
@@ -711,7 +728,7 @@ void Page::Draw(Text *ts) {
              paragraph_align == book_xml_css_style_utils::TextAlign::Right)) {
           ts->SetPen((u16)page_alignment_utils::ComputeAlignedLineStartX(
                          ts->margin.left, ts->margin.right, ts->GetPenX(),
-                         ts->display.width, image_plan.draw_width,
+                         ts->LogicalWidth(), image_plan.draw_width,
                          (int)paragraph_align),
                      ts->GetPenY());
         }
@@ -747,11 +764,11 @@ void Page::Draw(Text *ts) {
           if (image_plan.mode == INLINE_IMAGE_LAYOUT_PAGE) {
             image_x0 = 0;
             image_y0 = 0;
-            image_x1 = ts->display.width;
-            image_y1 = on_first_screen ? screen_dims::kTopScreenHeightPx : screen_dims::kBottomScreenHeightPx;
+            image_x1 = ts->LogicalWidth();
+            image_y1 = ts->LogicalHeight();
           } else if (image_plan.mode == INLINE_IMAGE_LAYOUT_BAND) {
             image_x0 = ts->margin.left;
-            image_x1 = ts->display.width - ts->margin.right;
+            image_x1 = ts->LogicalWidth() - ts->margin.right;
           }
           ExpandLinkBounds(&entry.bounds, image_x0, image_y0, image_x1,
                            image_y1);
@@ -772,9 +789,7 @@ void Page::Draw(Text *ts) {
           ts->linebegan = false;
           {
             const text_render_layout_utils::ReadingScreenMetrics metrics =
-                text_render_layout_utils::ResolveReadingScreenMetrics(
-                    on_first_screen, first_is_left, leftBottomMargin,
-                    rightBottomMargin);
+                current_reading_metrics();
             if (text_render_layout_utils::ShouldAdvanceAfterBandImage(
                     ts->GetPenY(), metrics.max_height,
                     metrics.bottom_margin)) {
@@ -832,7 +847,7 @@ void Page::Draw(Text *ts) {
             return ((Text *)ctx)->GetAdvance(codepoint, style);
           };
           const int rtl_available =
-              ts->display.width - ts->margin.left - ts->margin.right;
+              ts->LogicalWidth() - ts->margin.left - ts->margin.right;
           line_width = page_alignment_utils::MeasureAlignedLineWidth(
               buf, length, (size_t)(i - 1), ts->bold, ts->italic, mono,
               rtl_measure_fn, ts);
@@ -842,7 +857,7 @@ void Page::Draw(Text *ts) {
                 rtl_available, rtl_measure_fn, ts);
           }
         }
-        int right_edge = ts->display.width - ts->margin.right;
+        int right_edge = ts->LogicalWidth() - ts->margin.right;
         int rtl_x = text_render_layout_utils::ComputeRtlLineStartX(
             ts->margin.left, right_edge, line_width);
 #ifdef DSLIBRIS_DEBUG
@@ -864,7 +879,7 @@ void Page::Draw(Text *ts) {
             measure_fn, ts);
         ts->SetPen((u16)page_alignment_utils::ComputeAlignedLineStartX(
                        ts->margin.left, ts->margin.right, ts->GetPenX(),
-                       ts->display.width, line_width,
+                       ts->LogicalWidth(), line_width,
                        (int)paragraph_align),
                    ts->GetPenY());
       }
@@ -954,8 +969,9 @@ void Page::Draw(Text *ts) {
         ts->SetScreen(target);
         const int x0 = std::max(0, entry.bounds.x0 - 1);
         const int y0 = std::max(0, entry.bounds.y0 - 1);
-        const int x1 = std::min((int)ts->display.width, entry.bounds.x1 + 1);
-        const int max_y = (target == ts->screenleft) ? screen_dims::kTopScreenHeightPx : screen_dims::kBottomScreenHeightPx;
+        const int x1 =
+            std::min(ts->LogicalWidth(), entry.bounds.x1 + 1);
+        const int max_y = ts->LogicalHeight();
         const int y1 = std::min(max_y, entry.bounds.y1 + 1);
         const u16 focus_color = 0xF800;
         ts->FillRect((u16)x0, (u16)y0, (u16)x1, (u16)(y0 + 1), focus_color);
@@ -1019,7 +1035,7 @@ void Page::DrawNumber(Text *ts, u16 *number_screen) {
   // to our current progress in the book.
   int stringwidth = ts->GetStringAdvance(msg);
   // Put it at the bottom-right corner of the second reading screen.
-  int location = ts->display.width - ts->margin.right - stringwidth - 4;
+  int location = ts->LogicalWidth() - ts->margin.right - stringwidth - 4;
 
   // UI elements should not be clipped by page margins.
   int savedBottomMargin = ts->margin.bottom;

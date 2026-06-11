@@ -43,6 +43,16 @@ void TestSmallImageCentersWithinContentBox() {
   ExpectTrue("y centered", p.start_y > 0);
 }
 
+void TestLandscapeCoverUsesFullTopScreenHeight() {
+  const InlineImagePagePlacement p = ResolveInlineImagePagePlacement(
+      400, 240, 0, 0, 0, 0, 1200, 1574, 0, 0, 0);
+  ExpectEq("landscape cover has full screen available height", p.avail_height,
+           240);
+  ExpectEq("landscape cover fills available height", p.draw_height, 240);
+  ExpectEq("landscape cover preserves aspect ratio", p.draw_width, 183);
+  ExpectEq("landscape cover starts at top edge", p.start_y, 0);
+}
+
 void TestMarginsAndPaddingReduceAvailableArea() {
   const InlineImagePagePlacement p = ResolveInlineImagePagePlacement(
       240, 320, 10, 20, 30, 40, 100, 100, 5, 7, 9);
@@ -68,6 +78,7 @@ void TestInvalidSourceDimensionsClampSafely() {
 int main() {
   TestPlacementUsesContentArea();
   TestSmallImageCentersWithinContentBox();
+  TestLandscapeCoverUsesFullTopScreenHeight();
   TestMarginsAndPaddingReduceAvailableArea();
   TestInvalidSourceDimensionsClampSafely();
   return 0;

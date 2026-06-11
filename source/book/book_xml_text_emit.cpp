@@ -22,8 +22,25 @@ namespace {
 
 static const int kTextWrapRightGuardPx = 2;
 
-int TextWrapRightGuardPx(const FlowEmitMetrics &metrics) {
-  return metrics.display_width > 32 ? kTextWrapRightGuardPx : 0;
+// Width limits for the line being built. With per-screen metrics (landscape)
+// they follow p->screen, because a screen advance changes the wrap width
+// mid-fragment; otherwise the fragment-start width applies throughout.
+struct LineLimits {
+  int max_line_width;
+  int right_edge;
+};
+
+LineLimits ResolveLineLimits(const parsedata_t *p,
+                             const FlowEmitMetrics &metrics) {
+  int width = metrics.display_width;
+  if (metrics.per_screen_valid && p && p->screen >= 0 && p->screen < 2)
+    width = metrics.screen_width_by_screen[p->screen];
+  const int guard = (width > 32) ? kTextWrapRightGuardPx : 0;
+  LineLimits limits;
+  limits.max_line_width =
+      std::max(1, width - metrics.margin_right - metrics.margin_left - guard);
+  limits.right_edge = width - metrics.margin_right - guard;
+  return limits;
 }
 
 bool IsClosingAttachedPunctuation(uint32_t cp) {
@@ -80,11 +97,18 @@ void EmitFreshLineStartX(parsedata_t *p, const FlowEmitMetrics &metrics) {
   parse_append_page_byte(p, (u32)p->pen.x);
 }
 
-bool CurrentLineFitsEmitMetrics(int pen_y, const FlowEmitMetrics &metrics) {
-  if (metrics.screen_max_height > 0 && metrics.screen_bottom_margin >= 0) {
+bool CurrentLineFitsEmitMetrics(const parsedata_t *p, int pen_y,
+                                const FlowEmitMetrics &metrics) {
+  int max_height = metrics.screen_max_height;
+  int bottom_margin = metrics.screen_bottom_margin;
+  if (metrics.per_screen_valid && p && p->screen >= 0 && p->screen < 2) {
+    max_height = metrics.screen_max_height_by_screen[p->screen];
+    bottom_margin = metrics.screen_bottom_margin_by_screen[p->screen];
+  }
+  if (max_height > 0 && bottom_margin >= 0) {
     return text_render_layout_utils::CurrentLineFitsScreen(
-        pen_y, metrics.lineheight, metrics.linespacing,
-        metrics.screen_max_height, metrics.screen_bottom_margin);
+        pen_y, metrics.lineheight, metrics.linespacing, max_height,
+        bottom_margin);
   }
   return (metrics.overflow_threshold <= 0) ||
          (pen_y <= metrics.overflow_threshold);
@@ -123,7 +147,7 @@ void TraceParserLineEvent(parsedata_t *p, const FlowEmitMetrics &metrics,
       event ? event : "?", p->screen, y_before, x_before, p->pen.x, p->pen.y,
       metrics.lineheight, metrics.linespacing, metrics.screen_max_height,
       metrics.screen_bottom_margin, metrics.overflow_threshold,
-      CurrentLineFitsEmitMetrics(y_before, metrics) ? 1 : 0,
+      CurrentLineFitsEmitMetrics(p, y_before, metrics) ? 1 : 0,
       p->linebegan ? 1 : 0, p->paragraph_has_content ? 1 : 0,
       text ? text : "");
 }
@@ -294,20 +318,16 @@ void EmitFlowedShapedText(
       parse_append_page_byte(p, TEXT_PARAGRAPH_LTR);
   }
 
-  const int maxLineWidth =
-      std::max(1, metrics.display_width - metrics.margin_right -
-                      metrics.margin_left - TextWrapRightGuardPx(metrics));
-  const int right_edge =
-      metrics.display_width - metrics.margin_right -
-      TextWrapRightGuardPx(metrics);
+  LineLimits limits = ResolveLineLimits(p, metrics);
   size_t unit_index = 0;
   AlignFreshLineToEffectiveLeftMargin(p, metrics);
   if (metrics.text_indent_px > 0 && !p->linebegan) {
-    const int indent_limit = right_edge - p->pen.x - 1;
+    const int indent_limit = limits.right_edge - p->pen.x - 1;
     p->pen.x += std::min(metrics.text_indent_px, std::max(0, indent_limit));
   }
 
   while (unit_index < run.size()) {
+    limits = ResolveLineLimits(p, metrics);
     const text_layout_utils::ShapedGlyph &unit = run[unit_index];
     if (unit.text.codepoint == '\r') {
       unit_index++;
@@ -337,6 +357,13 @@ void EmitFlowedShapedText(
       if (unit_index >= run.size() || run[unit_index].text.codepoint == '\n')
         continue;
 
+      // Advance before measuring: the scan below has no token side effects,
+      // and the line must be measured against the screen it will land on
+      // (per-screen wrap widths differ in landscape).
+      AdvancePageIfNeeded(p, metrics.lineheight, advance_page_on_overflow,
+                          advance_ctx);
+      limits = ResolveLineLimits(p, metrics);
+
       const size_t line_start = unit_index;
       size_t line_end = unit_index;
       int line_px = 0;
@@ -360,7 +387,8 @@ void EmitFlowedShapedText(
           break;
 
         text_layout_utils::LineBreakMeasureResult word =
-            text_layout_utils::FindLineBreakAndMeasure(run, scan, maxLineWidth);
+            text_layout_utils::FindLineBreakAndMeasure(run, scan,
+                                                       limits.max_line_width);
         size_t word_end = word.end_index > scan ? word.end_index : scan + 1;
         int word_px =
             (int)text_layout_utils::MeasureTextRun(run, scan, word_end);
@@ -369,7 +397,7 @@ void EmitFlowedShapedText(
                                                                     space_start,
                                                                     scan)
                            : 0;
-        if (line_px > 0 && line_px + space_px + word_px > maxLineWidth)
+        if (line_px > 0 && line_px + space_px + word_px > limits.max_line_width)
           break;
 
         line_px += space_px + word_px;
@@ -384,8 +412,6 @@ void EmitFlowedShapedText(
       if (line_end <= line_start)
         line_end = line_start + 1;
 
-      AdvancePageIfNeeded(p, metrics.lineheight, advance_page_on_overflow,
-                          advance_ctx);
       parse_append_page_byte(p, TEXT_RTL_LINE_PX);
       parse_append_page_byte(p, (u32)line_px);
       EmitBidiSegment(p, run, line_start, line_end, bidi_runs,
@@ -422,7 +448,7 @@ void EmitFlowedShapedText(
         u16 unit_advance = (u16)unit.advance;
         const int pen_y_before_nbsp = p->pen.y;
         bool nbsp_did_wrap = false;
-        if ((p->pen.x + unit_advance) >= right_edge) {
+        if ((p->pen.x + unit_advance) >= limits.right_edge) {
           parse_append_page_byte(p, '\n');
           p->pen.x = metrics.margin_left;
           p->linebegan = false;
@@ -454,7 +480,7 @@ void EmitFlowedShapedText(
 
     text_layout_utils::LineBreakMeasureResult segment =
         text_layout_utils::FindLineBreakAndMeasure(run, unit_index,
-                                                   maxLineWidth);
+                                                   limits.max_line_width);
     size_t segment_end_index = segment.end_index;
     if (segment_end_index <= unit_index)
       segment_end_index = unit_index + 1;
@@ -478,7 +504,7 @@ void EmitFlowedShapedText(
                      : metrics.margin_left;
     }
     const bool need_wrap =
-        ((p->pen.x + advance) >= right_edge &&
+        ((p->pen.x + advance) >= limits.right_edge &&
          !(p->linebegan && attached_closing_punctuation));
 #if defined(DSLIBRIS_DEBUG) && EPUB_LINE_TRACE
     const std::string segment_text =
@@ -504,14 +530,12 @@ void EmitFlowedShapedText(
     // after any wrap) itself cannot be drawn. A candidate line may be valid
     // even when there is no room for a following line.
     {
-      if (!CurrentLineFitsEmitMetrics(p->pen.y, metrics)) {
+      if (!CurrentLineFitsEmitMetrics(p, p->pen.y, metrics)) {
 #if defined(DSLIBRIS_DEBUG) && EPUB_LINE_TRACE
         TraceParserLineEvent(p, metrics, "overflow-before-advance", p->pen.y,
                              p->pen.x, segment_text.c_str());
 #endif
-#if defined(DSLIBRIS_DEBUG) && SCREEN_ADVANCE_TRACE
-        const int pre_scr = p->screen;
-#endif
+        const int screen_before_advance = p->screen;
         AdvancePageIfNeeded(p, metrics.lineheight, advance_page_on_overflow,
                             advance_ctx);
 #if defined(DSLIBRIS_DEBUG) && EPUB_LINE_TRACE
@@ -519,16 +543,34 @@ void EmitFlowedShapedText(
                              p->pen.x, segment_text.c_str());
 #endif
 #if defined(DSLIBRIS_DEBUG) && SCREEN_ADVANCE_TRACE
-        if (p->screen != pre_scr || (pre_scr == 1 && p->screen == 0)) {
+        if (p->screen != screen_before_advance ||
+            (screen_before_advance == 1 && p->screen == 0)) {
           DBG_LOGF_CAT(p->reporter, DBG_LEVEL_DEBUG, DBG_CAT_LAYOUT,
                        "ScreenAdv in EmitFlowedShapedText: scr %d->%d "
                        "pen.x=%d base=%d linebegan=%d buflen=%d",
-                       pre_scr, p->screen, p->pen.x,
+                       screen_before_advance, p->screen, p->pen.x,
                        metrics.base_margin_left, p->linebegan ? 1 : 0,
                        (int)p->buflen);
         }
 #endif
         AlignFreshLineToEffectiveLeftMargin(p, metrics);
+        // The segment was measured against the previous screen's wrap width;
+        // remeasure when the advance landed on a screen with a different one.
+        if (metrics.per_screen_valid && p->screen != screen_before_advance) {
+          const LineLimits new_limits = ResolveLineLimits(p, metrics);
+          if (new_limits.max_line_width != limits.max_line_width) {
+            limits = new_limits;
+            segment = text_layout_utils::FindLineBreakAndMeasure(
+                run, unit_index, limits.max_line_width);
+            segment_end_index = segment.end_index;
+            if (segment_end_index <= unit_index)
+              segment_end_index = unit_index + 1;
+            advance = (u16)segment.width;
+            segment_start = unit.text.byte_offset;
+            segment_end = run[segment_end_index - 1].text.byte_offset +
+                          run[segment_end_index - 1].text.byte_length;
+          }
+        }
       }
     }
     EmitFreshLineStartX(p, metrics);

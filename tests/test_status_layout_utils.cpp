@@ -53,11 +53,26 @@ void TestFixedLayoutBottomOverlayFits() {
   ExpectEq("fixed layout right margin", layout.right_margin, 8);
 }
 
+void TestLandscapeBookHudUsesSlimBottomStrip() {
+  status_layout_utils::LandscapeBookStatusHudLayout layout =
+      status_layout_utils::ComputeLandscapeBookStatusHudLayout(320, 240, 12);
+  ExpectEq("landscape clear top", layout.clear_top, 218);
+  ExpectEq("landscape clear bottom", layout.clear_bottom, 240);
+  ExpectEq("landscape text baseline", layout.text_y, 235);
+  ExpectEq("landscape left margin", layout.left_margin, 6);
+  ExpectEq("landscape right margin", layout.right_margin, 6);
+  ExpectTrue("landscape progress bar fits strip",
+             layout.progress_bar_y >= layout.clear_top &&
+                 layout.progress_bar_y + layout.progress_bar_height <=
+                     layout.clear_bottom);
+}
+
 } // namespace
 
 int main() {
   TestTopScreenLeavesBottomPadding();
   TestShorterScreenStillFits();
   TestFixedLayoutBottomOverlayFits();
+  TestLandscapeBookHudUsesSlimBottomStrip();
   return 0;
 }

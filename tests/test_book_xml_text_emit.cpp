@@ -280,6 +280,82 @@ static void MockAdvancePage(parsedata_t *p, int lineheight, void *ctx) {
   p->pen.x = 0;
 }
 
+static void MockAdvanceReadingScreen(parsedata_t *p, int lineheight,
+                                     void *ctx) {
+  MockAdvancePage(p, lineheight, ctx);
+  p->screen = 1;
+}
+
+static book_xml_text_emit::FlowEmitMetrics PerScreenMetrics() {
+  book_xml_text_emit::FlowEmitMetrics m = BaseMetrics();
+  m.display_width = 8;
+  m.per_screen_valid = true;
+  m.screen_width_by_screen[0] = 8;
+  m.screen_width_by_screen[1] = 5;
+  m.screen_max_height_by_screen[0] = 20;
+  m.screen_max_height_by_screen[1] = 20;
+  m.screen_bottom_margin_by_screen[0] = 0;
+  m.screen_bottom_margin_by_screen[1] = 0;
+  return m;
+}
+
+void TestLandscapeLtrRemeasuresAfterScreenAdvance() {
+  parsedata_t p{};
+  parse_init(&p);
+  p.screen = 0;
+  p.pen.y = 20;
+
+  const char *text = "abcdefgh";
+  std::vector<text_layout_utils::ShapedGlyph> run;
+  bool has_rtl = false;
+  ExpectTrue("shape landscape ltr",
+             text_layout_utils::ShapeTextRunBidi(text, 8, NULL, MeasureMono,
+                                                 NULL, &run, &has_rtl));
+
+  MockOverflowCtx ctx{};
+  book_xml_text_emit::EmitFlowedShapedText(
+      &p, text, run, has_rtl, std::vector<text_bidi_utils::BidiRun>(),
+      PerScreenMetrics(), MockAdvanceReadingScreen, &ctx);
+
+  ExpectTrue("landscape ltr advances to second screen", ctx.fired);
+  ExpectEq("landscape ltr current screen", p.screen, 1);
+  ExpectEq("landscape ltr uses second-screen width", p.pen.x, 3);
+}
+
+void TestLandscapeRtlMeasuresAfterScreenAdvance() {
+  parsedata_t p{};
+  parse_init(&p);
+  p.screen = 0;
+  p.pen.y = 20;
+  p.in_paragraph = true;
+
+  const char *text = "\xD8\xA7\xD8\xA8\xD8\xAC\xD8\xAF\xD9\x87\xD9\x88";
+  std::vector<text_layout_utils::ShapedGlyph> run;
+  bool has_rtl = false;
+  ExpectTrue("shape landscape rtl",
+             text_layout_utils::ShapeTextRunBidi(
+                 text, std::strlen(text), NULL, MeasureMono, NULL, &run,
+                 &has_rtl));
+  ExpectTrue("landscape rtl detected", has_rtl);
+
+  std::vector<uint32_t> cps;
+  for (size_t i = 0; i < run.size(); i++)
+    cps.push_back(run[i].text.codepoint);
+  std::vector<text_bidi_utils::BidiRun> bidi_runs;
+  ExpectTrue("analyze landscape rtl",
+             text_bidi_utils::AnalyzeBidiRuns(cps.data(), cps.size(),
+                                              &bidi_runs));
+
+  MockOverflowCtx ctx{};
+  book_xml_text_emit::EmitFlowedShapedText(
+      &p, text, run, has_rtl, bidi_runs, PerScreenMetrics(),
+      MockAdvanceReadingScreen, &ctx);
+
+  ExpectTrue("landscape rtl advances to second screen", ctx.fired);
+  ExpectEq("landscape rtl current screen", p.screen, 1);
+  ExpectEq("landscape rtl width token", (int)p.buf[2], 5);
+}
+
 // Metrics for overflow threshold tests.
 // display_width=6, lineheight=13, linespacing=2 → step=15, threshold=304.
 static book_xml_text_emit::FlowEmitMetrics ThresholdMetrics() {
@@ -728,5 +804,7 @@ int main() {
   TestInlineStylePeriodRunHasNoSpaceOrScreenBreak();
   TestInlineSpanCommaRunHasNoSpaceOrScreenBreak();
   TestNewRunWordUsesCurrentVisibleLineIfItFits();
+  TestLandscapeLtrRemeasuresAfterScreenAdvance();
+  TestLandscapeRtlMeasuresAfterScreenAdvance();
   return 0;
 }

@@ -33,4 +33,14 @@ inline ScreenGeometry ResolveTextScreenGeometry(unsigned char orientation,
   return geometry;
 }
 
+// Geometry of a reading screen by its 0-based reading order index. Reading
+// screen 0 is the left buffer unless the device is turned right.
+inline ScreenGeometry ResolveReadingScreenGeometry(unsigned char orientation,
+                                                   int reading_screen_index) {
+  const bool is_left_buffer = orientation_utils::FirstScreenIsLeft(orientation)
+                                  ? (reading_screen_index == 0)
+                                  : (reading_screen_index != 0);
+  return ResolveTextScreenGeometry(orientation, is_left_buffer);
+}
+
 } // namespace text_screen_geometry

@@ -67,6 +67,23 @@ inline int ResolveCompactReadingBottomMargin(int full_bottom_margin) {
   return (full_bottom_margin > 20) ? 20 : full_bottom_margin;
 }
 
+// Pixel clip margin used by TextRenderer for a reading screen. This excludes
+// the extra overflow guard used by the paginator. In landscape, screen 0 has
+// no HUD and may draw to the physical edge; screen 1 reserves the HUD strip.
+inline int ResolveReadingScreenRenderBottomMarginForOrientation(
+    unsigned char orientation, int current_screen, int left_bottom_margin,
+    int right_bottom_margin) {
+  if (orientation_utils::IsLandscape(orientation)) {
+    return current_screen == 0 ? 0 : kLandscapeHudStripPx;
+  }
+
+  const bool first_screen_is_left =
+      !orientation_utils::IsTurnedRight(orientation);
+  const bool current_screen_is_left =
+      current_screen == 0 ? first_screen_is_left : !first_screen_is_left;
+  return current_screen_is_left ? left_bottom_margin : right_bottom_margin;
+}
+
 inline ReadingScreenMetrics ResolveReadingScreenMetricsForReadingScreen(
     bool turned_right, int current_screen, int left_bottom_margin,
     int right_bottom_margin) {
@@ -77,8 +94,8 @@ inline ReadingScreenMetrics ResolveReadingScreenMetricsForReadingScreen(
 }
 
 // Orientation-aware variant. Landscape reads top (screen 0) then bottom
-// (screen 1); the top screen has no HUD so it only keeps a compact margin,
-// while the bottom screen reserves the HUD strip plus the footer guard.
+// (screen 1). The top screen has no HUD and reserves only the pagination
+// guard; the bottom screen reserves the HUD strip plus the same guard.
 inline ReadingScreenMetrics ResolveReadingScreenMetricsForOrientation(
     unsigned char orientation, int current_screen, int left_bottom_margin,
     int right_bottom_margin) {
@@ -87,7 +104,7 @@ inline ReadingScreenMetrics ResolveReadingScreenMetricsForOrientation(
     metrics.max_height = kLandscapeReadingScreenHeightPx;
     metrics.bottom_margin =
         (current_screen == 0)
-            ? ResolveCompactReadingBottomMargin(left_bottom_margin)
+            ? kFullReadingScreenFooterGuardPx
             : (kLandscapeHudStripPx + kFullReadingScreenFooterGuardPx);
     return metrics;
   }

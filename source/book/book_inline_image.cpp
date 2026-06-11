@@ -763,10 +763,10 @@ bool Book::PlanInlineImageLayout(Text *ts, u16 image_id, int current_screen,
 
   InlineImageLayoutRequest req{};
   const InlineImageScreenLayout screen_layout =
-      ResolveInlineImageScreenLayoutForReadingScreen(
-          orientation_utils::IsTurnedRight(GetOrientation()), current_screen, ts->margin.bottom,
+      ResolveInlineImageScreenLayoutForOrientation(
+          (unsigned char)GetOrientation(), current_screen, ts->margin.bottom,
           ts->GetHeight());
-  req.screen_width = screen_dims::kTopScreenWidthPx;
+  req.screen_width = screen_layout.current_screen_width;
   req.screen_height = screen_layout.current_screen_height;
   req.next_screen_height = screen_layout.next_screen_height;
   req.margin_left = ts->margin.left;
@@ -814,11 +814,11 @@ bool Book::DrawInlineImage(Text *ts, u16 image_id,
   }
   const InlineImageLayoutPlan &plan = *plan_ptr;
 
-  const int screen_w = screen_dims::kTopScreenWidthPx;
   const InlineImageScreenLayout draw_screen_layout =
-      ResolveInlineImageScreenLayoutForReadingScreen(
-          orientation_utils::IsTurnedRight(GetOrientation()), current_screen, ts->margin.bottom,
+      ResolveInlineImageScreenLayoutForOrientation(
+          (unsigned char)GetOrientation(), current_screen, ts->margin.bottom,
           ts->GetHeight());
+  const int screen_w = draw_screen_layout.current_screen_width;
   const int screen_h = draw_screen_layout.current_screen_height;
   const int text_w = screen_w - ts->margin.left - ts->margin.right;
   const int line_height = ts->GetHeight();

@@ -20,6 +20,16 @@ struct FixedLayoutBottomHudLayout {
   int right_margin;
 };
 
+struct LandscapeBookStatusHudLayout {
+  int text_y;
+  int clear_top;
+  int clear_bottom;
+  int progress_bar_y;
+  int progress_bar_height;
+  int left_margin;
+  int right_margin;
+};
+
 inline BookStatusHudLayout ComputeBookStatusHudLayout(int screen_height,
                                                       int font_height,
                                                       int footer_reserved_height) {
@@ -70,6 +80,28 @@ ComputeFixedLayoutBottomHudLayout(int screen_height, int font_height) {
   layout.page_clear_bottom = layout.page_y + 8;
   if (layout.page_clear_bottom > screen_height)
     layout.page_clear_bottom = screen_height;
+  return layout;
+}
+
+inline LandscapeBookStatusHudLayout
+ComputeLandscapeBookStatusHudLayout(int screen_width, int screen_height,
+                                    int font_height) {
+  LandscapeBookStatusHudLayout layout = {};
+  if (screen_width <= 0 || screen_height <= 0)
+    return layout;
+
+  const int strip_height = 22;
+  layout.clear_top = screen_height > strip_height
+                         ? screen_height - strip_height
+                         : 0;
+  layout.clear_bottom = screen_height;
+  layout.text_y = screen_height - 5;
+  if (layout.text_y < font_height)
+    layout.text_y = font_height;
+  layout.progress_bar_height = 4;
+  layout.progress_bar_y = layout.clear_top + 9;
+  layout.left_margin = 6;
+  layout.right_margin = 6;
   return layout;
 }
 

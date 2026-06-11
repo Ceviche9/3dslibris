@@ -22,6 +22,7 @@
 #include "shared/text_layout_utils.h"
 #include "shared/orientation_utils.h"
 #include "shared/text_render_layout_utils.h"
+#include "shared/text_screen_geometry.h"
 #include "shared/text_unicode_utils.h"
 
 #include <algorithm>
@@ -29,6 +30,19 @@
 #include <vector>
 
 namespace {
+
+// Wrap width of the screen the parser is currently filling. Matches
+// ts->display.width in portrait; differs per screen in landscape (400/320).
+static int ReadingWidthForParseScreen(const parsedata_t *p, const Text *ts) {
+  const unsigned char parse_orientation = (u8)p->book->GetOrientation();
+  if (orientation_utils::IsLandscape(parse_orientation) && p->screen >= 0 &&
+      p->screen < 2) {
+    return text_screen_geometry::ResolveReadingScreenGeometry(
+               parse_orientation, p->screen)
+        .width;
+  }
+  return ts->display.width;
+}
 
 static void SyncParsedTextStyleLocal(Text *ts, bool bold, bool italic,
                                      bool mono) {
@@ -304,10 +318,12 @@ static void EmitPreformattedUtf8Segment(
       parse_append_page_byte(p, TEXT_PARAGRAPH_LTR);
   }
 
-  const int max_pre_line_width =
-      ts->display.width - ts->margin.right - ts->margin.left;
   size_t unit_index = 0;
   while (unit_index < pre_run.size()) {
+    // Re-resolve per iteration: a page advance may move to a screen with a
+    // different wrap width in landscape.
+    const int max_pre_line_width =
+        ReadingWidthForParseScreen(p, ts) - ts->margin.right - ts->margin.left;
     const text_layout_utils::ShapedGlyph &unit = pre_run[unit_index];
     if (unit.text.codepoint == '\r') {
       unit_index++;
@@ -337,7 +353,8 @@ static void EmitPreformattedUtf8Segment(
     const int advance = segment.width;
 
     if (text_layout_utils::PreformattedSegmentNeedsNewLine(
-            p->pen.x, advance, ts->display.width - ts->margin.right)) {
+            p->pen.x, advance,
+            ReadingWidthForParseScreen(p, ts) - ts->margin.right)) {
       parse_append_page_byte(p, '\n');
       p->pen.x = ts->margin.left;
       p->pen.y += (lineheight + linespacing);
@@ -488,6 +505,31 @@ void EmitFlowedFragmentRaw(parsedata_t *p, const char *txt, int txtlen,
       ResolveActiveWhiteSpaceLocal(p);
   book_xml_text_emit::FlowEmitMetrics emit_metrics{};
   emit_metrics.display_width = ts->display.width;
+  {
+    const unsigned char parse_orientation = (u8)p->book->GetOrientation();
+    if (orientation_utils::IsLandscape(parse_orientation)) {
+      // Landscape screens wrap at different widths; give the emit loop the
+      // per-screen table and start from the current screen's width.
+      emit_metrics.per_screen_valid = true;
+      for (int s = 0; s < 2; s++) {
+        emit_metrics.screen_width_by_screen[s] =
+            text_screen_geometry::ResolveReadingScreenGeometry(
+                parse_orientation, s)
+                .width;
+        const text_render_layout_utils::ReadingScreenMetrics sm =
+            text_render_layout_utils::ResolveReadingScreenMetricsForOrientation(
+                parse_orientation, s, ts->margin.bottom,
+                text_render_layout_utils::ResolveCompactReadingBottomMargin(
+                    ts->margin.bottom));
+        emit_metrics.screen_max_height_by_screen[s] = sm.max_height;
+        emit_metrics.screen_bottom_margin_by_screen[s] = sm.bottom_margin;
+      }
+      emit_metrics.display_width =
+          emit_metrics.screen_width_by_screen[(p->screen >= 0 && p->screen < 2)
+                                                  ? p->screen
+                                                  : 0];
+    }
+  }
   emit_metrics.base_margin_left = ts->margin.left;
   emit_metrics.margin_left = ts->margin.left + p->block_margin_left;
   emit_metrics.margin_right = ts->margin.right + p->block_margin_right;
@@ -531,7 +573,7 @@ void EmitFlowedFragmentRaw(parsedata_t *p, const char *txt, int txtlen,
 #endif
     if (ti.unit != MarginTopResult::Unit::None && !ti.negative) {
       const int px = book_xml_css_style_utils::ResolveHorizontalMarginPx(
-          ti, ts->display.width, (int)ts->GetPixelSize());
+          ti, emit_metrics.display_width, (int)ts->GetPixelSize());
 #if defined(DSLIBRIS_DEBUG) && TEXTINDENT_TRACE
       DBG_LOGF(p->book->GetStatusReporter(),
         "TextIndent resolved px=%d (applied=%d)", px, px > 0 ? 1 : 0);

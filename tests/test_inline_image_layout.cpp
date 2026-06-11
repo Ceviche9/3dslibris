@@ -206,6 +206,25 @@ int main() {
 
   {
     InlineImageLayoutRequest req = BaseRequest();
+    req.screen_width = 400;
+    req.screen_height = 240;
+    req.next_screen_height = 240;
+    req.margin_bottom = 0;
+    req.next_margin_bottom = 22;
+    req.line_began = false;
+    req.pen_x = req.margin_left;
+    req.pen_y = req.margin_top + req.line_height;
+    req.image_context = INLINE_IMAGE_CONTEXT_FIGURE_WITH_CAPTION;
+    InlineImageLayoutPlan plan =
+        PlanInlineImageLayout(req, Metadata(1200, 1574));
+    ExpectMode("landscape EPUB cover uses page layout", plan,
+               INLINE_IMAGE_LAYOUT_PAGE);
+    ExpectFalse("landscape EPUB cover stays on top screen",
+                plan.advance_before);
+  }
+
+  {
+    InlineImageLayoutRequest req = BaseRequest();
     req.pen_x = 200;
     InlineImageLayoutPlan plan =
         PlanInlineImageLayout(req, Metadata(48, 16));

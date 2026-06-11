@@ -140,7 +140,7 @@ InlineImageLayoutPlan PlanInlineImageLayout(const InlineImageLayoutRequest &req,
       !req.line_began && req.pen_x == req.margin_left &&
       req.pen_y <= (req.margin_top + 3 * line_height);
   const bool page_like_image_at_screen_start =
-      near_screen_start && eff_meta.height >= (eff_meta.width * 4) / 3 &&
+      near_screen_start && eff_meta.height >= (eff_meta.width * 5) / 4 &&
       eff_meta.height >= (8 * line_height);
   if (page_like_image_at_screen_start) {
     FillPageMode(req, &plan);

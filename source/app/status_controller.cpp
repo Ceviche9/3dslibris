@@ -23,6 +23,7 @@
 #include "book/page.h"
 #include "shared/app_flow_utils.h"
 #include "shared/battery_utils.h"
+#include "shared/orientation_utils.h"
 #include "settings/prefs.h"
 #include "ui/text.h"
 
@@ -165,18 +166,82 @@ void StatusController::UpdateStatus()
   int style = app_.ts->GetStyle();
   app_.ts->SetStyle(TEXT_STYLE_BROWSER); // smaller, readable font
 
-  if (mode == AppMode::Book &&
+  const bool landscape_reflow_hud =
+      current_book &&
+      orientation_utils::IsLandscape(current_book->GetOrientation()) &&
+      !UsesFixedLayoutMinimalHud(current_book);
+
+  if (landscape_reflow_hud)
+  {
+    app_.ts->SetScreen(app_.ts->screenright);
+    const int saved_bottom_margin = app_.ts->margin.bottom;
+    app_.ts->margin.bottom = 0;
+    const int screen_width = app_.ts->LogicalWidth();
+    const int screen_height = app_.ts->LogicalHeight();
+    const status_layout_utils::LandscapeBookStatusHudLayout hud_layout =
+        status_layout_utils::ComputeLandscapeBookStatusHudLayout(
+            screen_width, screen_height, app_.ts->GetHeight());
+    app_.ts->ClearRect(0, (u16)hud_layout.clear_top, (u16)screen_width,
+                       (u16)hud_layout.clear_bottom);
+    app_.ts->SetPen(hud_layout.left_margin, hud_layout.text_y);
+    app_.ts->PrintString(tmsg);
+
+    char page_msg[32] = {};
+    if (current_book && current_book->GetPageCount() > 0) {
+      snprintf(page_msg, sizeof(page_msg), "%d/%d",
+               (int)current_book->GetPosition() + 1,
+               (int)current_book->GetPageCount());
+    } else if (mode == AppMode::Opening) {
+      snprintf(page_msg, sizeof(page_msg), "%s", kOpeningStatusLabel);
+    }
+    const int page_width =
+        app_.ts->GetStringWidth(page_msg, TEXT_STYLE_BROWSER);
+    const int page_x = std::max(
+        hud_layout.left_margin,
+        screen_width - hud_layout.right_margin - page_width);
+    if (page_msg[0] != '\0') {
+      app_.ts->SetPen(page_x, hud_layout.text_y);
+      app_.ts->PrintString(page_msg);
+    }
+
+    const int clock_width =
+        app_.ts->GetStringWidth(tmsg, TEXT_STYLE_BROWSER);
+    const int bar_start = hud_layout.left_margin + clock_width + 8;
+    const int bar_end = page_x - 8;
+    if (snapshot.has_progress && bar_end > bar_start + 8) {
+      const u16 fg_color = app_.ts->GetFgColor();
+      app_.ts->DrawRect(bar_start, hud_layout.progress_bar_y, bar_end,
+                        hud_layout.progress_bar_y +
+                            hud_layout.progress_bar_height,
+                        fg_color);
+      const int inner_width = std::max(0, bar_end - bar_start - 2);
+      const int fill_width =
+          (int)((snapshot.percent_value * inner_width) / 100.0f);
+      if (fill_width > 0) {
+        app_.ts->FillRect(bar_start + 1, hud_layout.progress_bar_y + 1,
+                          bar_start + 1 + fill_width,
+                          hud_layout.progress_bar_y +
+                              hud_layout.progress_bar_height - 1,
+                          fg_color);
+      }
+    }
+    app_.ts->margin.bottom = saved_bottom_margin;
+  }
+  else if (mode == AppMode::Book &&
       UsesFixedLayoutMinimalHud(current_book))
   {
+    app_.ts->SetScreen(app_.ts->screenright);
+    const int screen_width = app_.ts->LogicalWidth();
+    const int screen_height = app_.ts->LogicalHeight();
     const status_layout_utils::FixedLayoutBottomHudLayout hud_layout =
         status_layout_utils::ComputeFixedLayoutBottomHudLayout(
-            320, app_.ts->GetHeight());
+            screen_height, app_.ts->GetHeight());
     const int time_width = app_.ts->GetStringWidth(tmsg, TEXT_STYLE_BROWSER);
-    const int time_x = std::max(0, 240 - hud_layout.right_margin - time_width);
+    const int time_x =
+        std::max(0, screen_width - hud_layout.right_margin - time_width);
 
-    app_.ts->SetScreen(app_.ts->screenright);
     app_.ts->ClearRect((u16)std::max(0, time_x - 4),
-                       (u16)hud_layout.time_clear_top, 240,
+                       (u16)hud_layout.time_clear_top, (u16)screen_width,
                        (u16)hud_layout.time_clear_bottom);
     app_.ts->SetPen(time_x, hud_layout.time_y);
     app_.ts->PrintString(tmsg);
@@ -189,9 +254,10 @@ void StatusController::UpdateStatus()
                (int)current_book->GetPageCount());
       const int page_width =
           app_.ts->GetStringWidth(page_msg, TEXT_STYLE_BROWSER);
-      const int page_x = std::max(0, 240 - hud_layout.right_margin - page_width);
+      const int page_x = std::max(
+          0, screen_width - hud_layout.right_margin - page_width);
       app_.ts->ClearRect((u16)std::max(0, page_x - 4),
-                         (u16)hud_layout.page_clear_top, 240,
+                         (u16)hud_layout.page_clear_top, (u16)screen_width,
                          (u16)hud_layout.page_clear_bottom);
       app_.ts->SetPen(page_x, hud_layout.page_y);
       app_.ts->PrintString(page_msg);
