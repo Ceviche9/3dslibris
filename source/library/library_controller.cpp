@@ -25,6 +25,7 @@ void DrawOpeningSplashWithProgress(unsigned done, unsigned total,
 #include "shared/debug_log.h"
 #include "shared/path_constants.h"
 #include "shared/app_flow_utils.h"
+#include "shared/stb_image_gif_utils.h"
 #include "shared/utf8_utils.h"
 #include "stb_image.h"
 
@@ -416,7 +417,7 @@ static void TryLoadFolderCover(Book *book) {
   fclose(fp);
 
   int w = 0, h = 0, comp = 0;
-  unsigned char *pixels = stbi_load_from_memory(
+  unsigned char *pixels = stb_image_gif_utils::LoadFromMemory(
       compressed.data(), (int)compressed.size(), &w, &h, &comp, 3);
   if (!pixels || w <= 0 || h <= 0) {
     if (pixels)

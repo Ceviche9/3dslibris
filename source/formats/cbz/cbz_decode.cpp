@@ -3,6 +3,7 @@
 #include "formats/common/fixed_layout_screen_constants.h"
 #include "formats/common/pdf_view_utils.h"
 #include "shared/color_utils.h"
+#include "shared/stb_image_gif_utils.h"
 
 #include "stb_image.h"
 
@@ -399,9 +400,9 @@ bool DecodeCbzPageImage(const std::vector<unsigned char> &bytes,
   const CbzDecodeTargetSize target =
       ComputeDecodeTargetSize(src_width, src_height, max_zoom_index);
 
-  ScopedStbiImage decoded(stbi_load_from_memory(bytes.data(), (int)bytes.size(),
-                                                &src_width, &src_height,
-                                                &src_components, 3));
+  ScopedStbiImage decoded(stb_image_gif_utils::LoadFromMemory(
+      bytes.data(), (int)bytes.size(), &src_width, &src_height, &src_components,
+      3));
 
   if (!decoded.data) {
     ClearDecodedPage(out);

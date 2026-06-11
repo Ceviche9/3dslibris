@@ -12,6 +12,7 @@
 
 #include "shared/color_utils.h"
 #include "shared/path_constants.h"
+#include "shared/stb_image_gif_utils.h"
 #include "ui/theme_colors.h"
 #include <algorithm>
 #include <cmath>
@@ -137,8 +138,8 @@ static bool load_icon_png(IconBitmap *icon, const char *path) {
   if (!read_file_all(path, &encoded))
     return false;
   int w = 0, h = 0, n = 0;
-  unsigned char *decoded =
-      stbi_load_from_memory(encoded.data(), (int)encoded.size(), &w, &h, &n, 4);
+  unsigned char *decoded = stb_image_gif_utils::LoadFromMemory(
+      encoded.data(), (int)encoded.size(), &w, &h, &n, 4);
   if (!decoded || w <= 0 || h <= 0) {
     if (decoded)
       stbi_image_free(decoded);

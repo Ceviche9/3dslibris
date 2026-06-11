@@ -14,6 +14,7 @@
 #include "shared/debug_log.h"
 #include "shared/orientation_utils.h"
 #include "shared/path_constants.h"
+#include "shared/stb_image_gif_utils.h"
 #include "shared/text_render_layout_utils.h"
 #include "stb_image.h"
 #include "string.h"
@@ -426,8 +427,8 @@ bool TextRenderer::EnsureSplashLoaded(bool dark) {
       continue;
     }
     fclose(fp);
-    srcRgb = stbi_load_from_memory(encoded.data(), (int)encoded.size(), &srcW,
-                                   &srcH, &srcChannels, 3);
+    srcRgb = stb_image_gif_utils::LoadFromMemory(
+        encoded.data(), (int)encoded.size(), &srcW, &srcH, &srcChannels, 3);
     if (srcRgb)
       break;
   }

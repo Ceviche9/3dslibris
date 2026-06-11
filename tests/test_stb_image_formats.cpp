@@ -1,5 +1,7 @@
 #include "stb_image.h"
 
+#include "shared/stb_image_gif_utils.h"
+
 #include "test_assert.h"
 
 namespace {
@@ -21,9 +23,11 @@ void TestGifInfoAndLoadAreEnabled() {
   test::ExpectEq("gif width", w, 1);
   test::ExpectEq("gif height", h, 1);
 
-  unsigned char *pixels =
-      stbi_load_from_memory(kGif1x1, sizeof(kGif1x1), &w, &h, &comp, 4);
-  test::ExpectTrue("gif decode supported", pixels != NULL);
+  unsigned char *pixels = stb_image_gif_utils::LoadFromMemory(
+      kGif1x1, sizeof(kGif1x1), &w, &h, &comp, 4);
+  test::ExpectTrue("heap-safe gif decode supported", pixels != NULL);
+  test::ExpectEq("decoded gif width", w, 1);
+  test::ExpectEq("decoded gif height", h, 1);
   stbi_image_free(pixels);
 }
 

@@ -13,6 +13,7 @@
 #include "book/book.h"
 #include "book/cover_layout_constants.h"
 #include "shared/aspect_fit_utils.h"
+#include "shared/stb_image_gif_utils.h"
 #include "stb_image.h"
 
 namespace cover_decode_utils {
@@ -25,8 +26,8 @@ bool DecodeImageToCoverThumb(Book *book, const unsigned char *data,
   int img_w = 0;
   int img_h = 0;
   int channels = 0;
-  unsigned char *pixels = stbi_load_from_memory(data, (int)size, &img_w, &img_h,
-                                                &channels, 3);
+  unsigned char *pixels = stb_image_gif_utils::LoadFromMemory(
+      data, (int)size, &img_w, &img_h, &channels, 3);
   if (!pixels)
     return false;
 

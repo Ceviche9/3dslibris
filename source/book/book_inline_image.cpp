@@ -24,6 +24,7 @@
 #include "shared/path_constants.h"
 #include "shared/status_reporter.h"
 #include "stb_image.h"
+#include "shared/stb_image_gif_utils.h"
 #include "shared/string_utils.h"
 #include "ui/text.h"
 #include "minizip/unzip.h"
@@ -716,9 +717,9 @@ bool Book::EnsureInlineImageMetadata(u16 image_id, InlineImageMetadata *out) {
         // Some MOBI photo records decode fine but fail the lightweight probe.
         // Fall back to a full decode once so pagination still gets dimensions.
         int load_w = 0, load_h = 0, load_c = 0;
-        unsigned char *pixels =
-            stbi_load_from_memory(compressed.data(), (int)compressed.size(),
-                                  &load_w, &load_h, &load_c, 0);
+        unsigned char *pixels = stb_image_gif_utils::LoadFromMemory(
+            compressed.data(), (int)compressed.size(), &load_w, &load_h,
+            &load_c, 0);
         if (pixels) {
           stbi_image_free(pixels);
           info_w = load_w;
@@ -961,15 +962,16 @@ bool Book::DrawInlineImage(Text *ts, u16 image_id,
   if (!entry_ready) {
     int imgW = 0, imgH = 0, channels = 0;
     int loaded_channels = 4;
-    unsigned char *pixels = stbi_load_from_memory(
+    unsigned char *pixels = stb_image_gif_utils::LoadFromMemory(
         compressed.data(), (int)compressed.size(), &imgW, &imgH, &channels, 4);
     if (!pixels) {
       // Some valid JPEGs fail the 4-channel expansion path on-device. Retry
       // with RGB data and treat the image as fully opaque during the scale/blit
       // pass.
       loaded_channels = 3;
-      pixels = stbi_load_from_memory(compressed.data(), (int)compressed.size(),
-                                     &imgW, &imgH, &channels, 3);
+      pixels = stb_image_gif_utils::LoadFromMemory(
+          compressed.data(), (int)compressed.size(), &imgW, &imgH, &channels,
+          3);
     }
     if (!pixels)
       return false;
