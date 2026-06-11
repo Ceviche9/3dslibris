@@ -4,64 +4,113 @@
 
 int main() {
   test::ExpectEq("general visible count",
-                 settings::VisiblePrefsButtonCount(false, false), 7);
-  test::ExpectEq("book visible count without line wrap",
-                 settings::VisiblePrefsButtonCount(true, false), 7);
-  test::ExpectEq("book visible count with line wrap",
-                 settings::VisiblePrefsButtonCount(true, true), 8);
+                 settings::VisiblePrefsButtonCount(false, false), 6);
+  test::ExpectEq("reflow book page 1 count",
+                 settings::VisiblePrefsButtonCount(true, false), 6);
+  test::ExpectEq("MOBI book page 1 count",
+                 settings::VisiblePrefsButtonCount(true, true), 7);
 
   test::ExpectEq("general slot 0", settings::PrefsButtonForVisibleSlot(false, false, 0),
                  PREFS_BUTTON_STYLE_CUSTOMIZATION);
-  test::ExpectEq("general slot 2", settings::PrefsButtonForVisibleSlot(false, false, 2),
+  test::ExpectEq("general slot 1", settings::PrefsButtonForVisibleSlot(false, false, 1),
                  PREFS_BUTTON_TIME24H);
-  test::ExpectEq("general slot 3", settings::PrefsButtonForVisibleSlot(false, false, 3),
+  test::ExpectEq("general slot 2", settings::PrefsButtonForVisibleSlot(false, false, 2),
                  PREFS_BUTTON_TIME_REMAINING);
-  test::ExpectEq("general slot 4", settings::PrefsButtonForVisibleSlot(false, false, 4),
+  test::ExpectEq("general slot 3", settings::PrefsButtonForVisibleSlot(false, false, 3),
                  PREFS_BUTTON_COLORMODE);
-  test::ExpectEq("general slot 6", settings::PrefsButtonForVisibleSlot(false, false, 6),
+  test::ExpectEq("general slot 4", settings::PrefsButtonForVisibleSlot(false, false, 4),
+                 PREFS_BUTTON_LIBRARY_VIEW);
+  test::ExpectEq("general slot 5", settings::PrefsButtonForVisibleSlot(false, false, 5),
                  PREFS_BUTTON_LIBRARY_SORT);
 
-  test::ExpectEq("extra button count", settings::ExtraPrefsButtonCount(), 4);
-  test::ExpectEq("extra slot 0", settings::ExtraPrefsButtonForSlot(0),
+  test::ExpectEq("general page 2 button count",
+                 settings::ExtraPrefsButtonCount(), 6);
+  test::ExpectEq("general page 2 orientation first",
+                 settings::ExtraPrefsButtonForSlot(0),
+                 PREFS_BUTTON_ORIENTATION);
+  test::ExpectEq("general page 2 handedness second",
+                 settings::ExtraPrefsButtonForSlot(1),
+                 PREFS_BUTTON_HANDEDNESS);
+  test::ExpectEq("general page 2 reopen last book",
+                 settings::ExtraPrefsButtonForSlot(2),
                  PREFS_BUTTON_REOPEN_LAST_BOOK);
-  test::ExpectEq("extra slot 1", settings::ExtraPrefsButtonForSlot(1),
+  test::ExpectEq("general page 2 circle pad",
+                 settings::ExtraPrefsButtonForSlot(3),
                  PREFS_BUTTON_CIRCLE_PAD_PAGE_TURN);
-  test::ExpectEq("extra slot 2", settings::ExtraPrefsButtonForSlot(2),
+  test::ExpectEq("general page 2 reset",
+                 settings::ExtraPrefsButtonForSlot(4),
                  PREFS_BUTTON_RESET_DEFAULTS);
-  test::ExpectEq("extra slot 3", settings::ExtraPrefsButtonForSlot(3),
+  test::ExpectEq("general page 2 clear cache",
+                 settings::ExtraPrefsButtonForSlot(5),
                  PREFS_BUTTON_CLEAR_CACHE);
 
-  test::ExpectEq("book slot 0", settings::PrefsButtonForVisibleSlot(true, false, 0),
+  test::ExpectEq("reflow page 1 slot 0",
+                 settings::PrefsButtonForVisibleSlot(true, false, 0),
                  PREFS_BUTTON_STYLE_CUSTOMIZATION);
-  test::ExpectEq("book slot 1", settings::PrefsButtonForVisibleSlot(true, false, 1),
-                 PREFS_BUTTON_ORIENTATION);
-  test::ExpectEq("book slot 2", settings::PrefsButtonForVisibleSlot(true, false, 2),
+  test::ExpectEq("reflow page 1 slot 1",
+                 settings::PrefsButtonForVisibleSlot(true, false, 1),
                  PREFS_BUTTON_TIME24H);
-  test::ExpectEq("book slot 3", settings::PrefsButtonForVisibleSlot(true, false, 3),
+  test::ExpectEq("reflow page 1 slot 2",
+                 settings::PrefsButtonForVisibleSlot(true, false, 2),
                  PREFS_BUTTON_TIME_REMAINING);
-  test::ExpectEq("book slot 4", settings::PrefsButtonForVisibleSlot(true, false, 4),
+  test::ExpectEq("reflow page 1 slot 3",
+                 settings::PrefsButtonForVisibleSlot(true, false, 3),
                  PREFS_BUTTON_BOOK_INFO);
-  test::ExpectEq("book slot 5", settings::PrefsButtonForVisibleSlot(true, false, 5),
+  test::ExpectEq("reflow page 1 slot 4",
+                 settings::PrefsButtonForVisibleSlot(true, false, 4),
                  PREFS_BUTTON_INDEX);
-  test::ExpectEq("book slot 6", settings::PrefsButtonForVisibleSlot(true, false, 6),
+  test::ExpectEq("reflow page 1 slot 5",
+                 settings::PrefsButtonForVisibleSlot(true, false, 5),
                  PREFS_BUTTON_BOOKMARKS);
 
-  test::ExpectEq("book slot 0 line wrap", settings::PrefsButtonForVisibleSlot(true, true, 0),
+  test::ExpectEq("MOBI page 1 slot 0",
+                 settings::PrefsButtonForVisibleSlot(true, true, 0),
                  PREFS_BUTTON_STYLE_CUSTOMIZATION);
-  test::ExpectEq("book slot 1 line wrap", settings::PrefsButtonForVisibleSlot(true, true, 1),
+  test::ExpectEq("MOBI page 1 keeps line wrap fix",
+                 settings::PrefsButtonForVisibleSlot(true, true, 1),
                  PREFS_BUTTON_LIBRARY_VIEW);
-  test::ExpectEq("book slot 2 line wrap", settings::PrefsButtonForVisibleSlot(true, true, 2),
-                 PREFS_BUTTON_ORIENTATION);
-  test::ExpectEq("book slot 3 line wrap", settings::PrefsButtonForVisibleSlot(true, true, 3),
+  test::ExpectEq("MOBI page 1 slot 2",
+                 settings::PrefsButtonForVisibleSlot(true, true, 2),
                  PREFS_BUTTON_TIME24H);
-  test::ExpectEq("book slot 4 line wrap", settings::PrefsButtonForVisibleSlot(true, true, 4),
+  test::ExpectEq("MOBI page 1 slot 3",
+                 settings::PrefsButtonForVisibleSlot(true, true, 3),
                  PREFS_BUTTON_TIME_REMAINING);
-  test::ExpectEq("book slot 5 line wrap", settings::PrefsButtonForVisibleSlot(true, true, 5),
+  test::ExpectEq("MOBI page 1 slot 4",
+                 settings::PrefsButtonForVisibleSlot(true, true, 4),
                  PREFS_BUTTON_BOOK_INFO);
-  test::ExpectEq("book slot 6 line wrap", settings::PrefsButtonForVisibleSlot(true, true, 6),
+  test::ExpectEq("MOBI page 1 slot 5",
+                 settings::PrefsButtonForVisibleSlot(true, true, 5),
                  PREFS_BUTTON_INDEX);
-  test::ExpectEq("book slot 7 line wrap", settings::PrefsButtonForVisibleSlot(true, true, 7),
+  test::ExpectEq("MOBI page 1 slot 6",
+                 settings::PrefsButtonForVisibleSlot(true, true, 6),
                  PREFS_BUTTON_BOOKMARKS);
+
+  test::ExpectEq("reflow page 2 count",
+                 settings::BookPrefsPage2ButtonCount(false), 7);
+  test::ExpectEq("reflow page 2 orientation first",
+                 settings::BookPrefsPage2ButtonForSlot(false, 0),
+                 PREFS_BUTTON_ORIENTATION);
+  test::ExpectEq("reflow page 2 handedness second",
+                 settings::BookPrefsPage2ButtonForSlot(false, 1),
+                 PREFS_BUTTON_HANDEDNESS);
+  test::ExpectEq("reflow page 2 font size",
+                 settings::BookPrefsPage2ButtonForSlot(false, 2),
+                 PREFS_BUTTON_FONTSIZE);
+  test::ExpectEq("reflow page 2 publisher margins last",
+                 settings::BookPrefsPage2ButtonForSlot(false, 6),
+                 PREFS_BUTTON_PUBLISHER_BLOCK_MARGINS);
+
+  test::ExpectEq("fixed-layout page 2 count",
+                 settings::BookPrefsPage2ButtonCount(true), 3);
+  test::ExpectEq("fixed-layout page 2 orientation first",
+                 settings::BookPrefsPage2ButtonForSlot(true, 0),
+                 PREFS_BUTTON_ORIENTATION);
+  test::ExpectEq("fixed-layout page 2 handedness second",
+                 settings::BookPrefsPage2ButtonForSlot(true, 1),
+                 PREFS_BUTTON_HANDEDNESS);
+  test::ExpectEq("fixed-layout page 2 reading direction third",
+                 settings::BookPrefsPage2ButtonForSlot(true, 2),
+                 PREFS_BUTTON_LIBRARY_VIEW);
 
   for (unsigned char slot = 0; slot < settings::VisiblePrefsButtonCount(true, false);
        slot++) {

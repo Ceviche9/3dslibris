@@ -24,6 +24,7 @@ public:
   void PrefsIncreaseParaspacing();
   void PrefsDecreaseParaspacing();
   void PrefsFlipOrientation();
+  void PrefsToggleHandedness();
   void PrefsRefreshButton(int index);
 
 private:

@@ -34,6 +34,7 @@
 #include "ui/ui_button_skin.h"
 #include "shared/color_utils.h"
 #include "shared/debug_log.h"
+#include "shared/orientation_utils.h"
 #include "parse.h"
 #include "shared/path_constants.h"
 #include "settings/prefs.h"
@@ -59,21 +60,10 @@ static const int kPage2Buttons[] = {
 };
 static const int kPage2ButtonCount = 6;
 
-static const int kBookStylePage2Buttons[] = {
-    PREFS_BUTTON_FONTSIZE,
-    PREFS_BUTTON_LINE_SPACING,
-    PREFS_BUTTON_PARASPACING,
-    PREFS_BUTTON_PUBLISHER_TEXT_INDENT,
-    PREFS_BUTTON_PUBLISHER_BLOCK_MARGINS,
-};
-static const int kBookStylePage2ButtonCount = 5;
 static const int PREFS_ROW_X = 5;
 static const int PREFS_ROW_W = 230;
 static const u32 kGoToPageCoarseStep = 10;
 static const int kLineSpacingMaxPx = 16;
-
-static bool CurrentBookShowsLineWrapFix(Book *book, bool is_book_ctx);
-
 
 static u8 NormalizeVisibleCount(u8 count) { return count == 0 ? 1 : count; }
 
@@ -175,10 +165,6 @@ static bool CurrentBookUsesReadingDirectionSlot(Book *book, bool is_book_ctx) {
   return is_book_ctx && book && book->IsFixedLayout();
 }
 
-static bool CurrentBookShowsLineWrapFix(Book *book, bool is_book_ctx) {
-  return is_book_ctx && book && (book->IsMobiFile() || book->IsFixedLayout());
-}
-
 static bool CurrentBookUsesTextLayoutSettings(Book *book, bool is_book_ctx) {
   return is_book_ctx && book && book->UsesTextLayoutSettings();
 }
@@ -188,19 +174,8 @@ static bool CurrentBookCanGoToPage(Book *book, bool is_book_ctx) {
 }
 
 static bool CurrentBookHasExtraPrefsPage(Book *book, bool is_book_ctx) {
-  return CurrentBookUsesTextLayoutSettings(book, is_book_ctx);
-}
-
-static int BookPage2ButtonCount(Book *book, bool is_book_ctx) {
-  if (CurrentBookUsesTextLayoutSettings(book, is_book_ctx))
-    return kBookStylePage2ButtonCount;
-  return 0;
-}
-
-static int BookPage2ButtonForSlot(Book *book, bool is_book_ctx, int slot) {
-  if (slot >= 0 && slot < kBookStylePage2ButtonCount)
-    return kBookStylePage2Buttons[slot];
-  return kBookStylePage2Buttons[0];
+  return is_book_ctx && book &&
+         (book->UsesTextLayoutSettings() || book->IsFixedLayout());
 }
 
 static void ToggleFixedLayoutReadingDirection(Prefs *prefs) {
@@ -288,11 +263,13 @@ int SettingsController::EffectiveVisibleCount() const {
   if (!is_book_ctx && prefs_general_page_ == 1)
     return kPage2ButtonCount;
   if (is_book_ctx && prefs_general_page_ == 1)
-    return BookPage2ButtonCount(app_.GetCurrentBook(), is_book_ctx);
+    return settings::BookPrefsPage2ButtonCount(
+        app_.GetCurrentBook() && app_.GetCurrentBook()->IsFixedLayout());
   if (!is_book_ctx && prefs_general_page_ == 2)
     return (int)settings::ExtraPrefsButtonCount();
   return (int)settings::VisiblePrefsButtonCount(
-      is_book_ctx, CurrentBookShowsLineWrapFix(app_.GetCurrentBook(), is_book_ctx));
+      is_book_ctx,
+      CurrentBookUsesLineWrapFixSlot(app_.GetCurrentBook(), is_book_ctx));
 }
 
 int SettingsController::EffectiveButtonForSlot(int slot) const {
@@ -300,11 +277,15 @@ int SettingsController::EffectiveButtonForSlot(int slot) const {
   if (!is_book_ctx && prefs_general_page_ == 1)
     return (slot >= 0 && slot < kPage2ButtonCount) ? kPage2Buttons[slot] : kPage2Buttons[0];
   if (is_book_ctx && prefs_general_page_ == 1)
-    return BookPage2ButtonForSlot(app_.GetCurrentBook(), is_book_ctx, slot);
+    return settings::BookPrefsPage2ButtonForSlot(
+        app_.GetCurrentBook() && app_.GetCurrentBook()->IsFixedLayout(),
+        (u8)slot);
   if (!is_book_ctx && prefs_general_page_ == 2)
     return settings::ExtraPrefsButtonForSlot((u8)slot);
   return settings::PrefsButtonForVisibleSlot(
-      is_book_ctx, CurrentBookShowsLineWrapFix(app_.GetCurrentBook(), is_book_ctx), (u8)slot);
+      is_book_ctx,
+      CurrentBookUsesLineWrapFixSlot(app_.GetCurrentBook(), is_book_ctx),
+      (u8)slot);
 }
 
 void SettingsController::GoToPrefsPage(int page) {
@@ -314,6 +295,7 @@ void SettingsController::GoToPrefsPage(int page) {
 }
 
 void SettingsController::ShowSettingsView(bool from_book) {
+  app_.ApplyRenderOrientation(app_.portrait_orientation);
   prefs_general_page_ = 0;
   go_to_page_dialog_.Close();
   app_.SetBookSettingsContext(from_book);
@@ -357,7 +339,8 @@ void SettingsController::PrefsInit() {
   const std::vector<std::string> labels{
       "style customization",
       "font configuration", "font size",    "extra line spacing",
-      "extra paragraph spacing", "screen orientation", "clock format",
+      "extra paragraph spacing", "reading orientation", "handedness",
+      "clock format",
       "time remaining", "reopen last book", "color mode", "library view",
       "circle pad pages", "library sort", "book information", "index", "bookmarks",
       "reset settings",
@@ -849,9 +832,23 @@ void SettingsController::PrefsDecreaseParaspacing() {
 }
 
 void SettingsController::PrefsFlipOrientation() {
-  app_.SetOrientation(!app_.orientation);
+  const u8 next_orientation = app_.landscape
+                                  ? app_.portrait_orientation
+                                  : orientation_utils::ORIENT_LANDSCAPE;
+  app_.SetOrientation(next_orientation);
   app_.MarkBookLayoutDirty();
   PrefsRefreshButton(PREFS_BUTTON_ORIENTATION);
+  app_.prefs->Write();
+  if (app_.GetMode() == AppMode::Prefs)
+    PrefsDraw();
+}
+
+void SettingsController::PrefsToggleHandedness() {
+  const u8 next = orientation_utils::IsTurnedRight(app_.portrait_orientation)
+                      ? orientation_utils::ORIENT_TURNED_LEFT
+                      : orientation_utils::ORIENT_TURNED_RIGHT;
+  app_.SetHandedness(next);
+  PrefsRefreshButton(PREFS_BUTTON_HANDEDNESS);
   app_.prefs->Write();
   if (app_.GetMode() == AppMode::Prefs)
     PrefsDraw();
@@ -935,7 +932,14 @@ void SettingsController::PrefsRefreshButton(int index) {
     break;
   case PREFS_BUTTON_ORIENTATION:
     app_.prefsButtons[PREFS_BUTTON_ORIENTATION].SetLabel2(
-        app_.orientation ? std::string("Turned Right") : std::string("Turned Left"));
+        app_.landscape ? std::string("Horizontal")
+                       : std::string("Vertical"));
+    break;
+  case PREFS_BUTTON_HANDEDNESS:
+    app_.prefsButtons[PREFS_BUTTON_HANDEDNESS].SetLabel2(
+        orientation_utils::IsTurnedRight(app_.portrait_orientation)
+            ? std::string("Left-handed")
+            : std::string("Right-handed"));
     break;
   case PREFS_BUTTON_TIME24H:
     if (CurrentBookCanGoToPage(book, is_book_ctx)) {
@@ -1196,8 +1200,8 @@ void SettingsController::ResetToDefaults() {
   app_.paraindent = 0;
   app_.publisher_text_indent = true;
   app_.publisher_block_margins = true;
-  if (app_.orientation)
-    app_.SetOrientation(false);
+  if (app_.orientation != orientation_utils::ORIENT_TURNED_LEFT)
+    app_.SetOrientation(orientation_utils::ORIENT_TURNED_LEFT);
   app_.ts->SetColorMode(0);
   UiButtonSkin_SetColorMode(0);
   app_.prefs->time24h = true;
@@ -1222,6 +1226,12 @@ void SettingsController::PrefsHandlePress() {
 
   if (selected_button == PREFS_BUTTON_ORIENTATION) {
     PrefsFlipOrientation();
+    app_.MarkPrefsDirty();
+    return;
+  }
+
+  if (selected_button == PREFS_BUTTON_HANDEDNESS) {
+    PrefsToggleHandedness();
     app_.MarkPrefsDirty();
     return;
   }
