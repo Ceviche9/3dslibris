@@ -6,6 +6,7 @@
 
 #include "book/page.h"
 #include "formats/common/fixed_layout_blit_utils.h"
+#include "formats/common/fixed_layout_screen_constants.h"
 #include "formats/common/fixed_layout_viewport_utils.h"
 #include "settings/prefs.h"
 #include "shared/debug_log.h"
@@ -365,6 +366,28 @@ void Book::DrawCurrentMuPdfView(Text *ts) {
   if (!mupdf_state || !mupdf_state->ctx || !mupdf_state->doc || mupdf_state->page_count == 0)
     return;
 
+  const fixed_layout_screen::TargetDimensions top_dims =
+      fixed_layout_screen::TargetDims((unsigned char)GetOrientation(), true);
+  const fixed_layout_screen::TargetDimensions bottom_dims =
+      fixed_layout_screen::TargetDims((unsigned char)GetOrientation(), false);
+  if (mupdf_state->target_top_width != top_dims.width ||
+      mupdf_state->target_top_height != top_dims.height ||
+      mupdf_state->target_bottom_width != bottom_dims.width ||
+      mupdf_state->target_bottom_height != bottom_dims.height) {
+    fixed_layout_viewport_utils::ResetViewportForTargetChange(
+        &mupdf_state->viewport, pdf_view_utils::DefaultZoomIndex());
+    CancelMuPdfIncrementalRenderState(mupdf_state);
+    ResetBitmapCache(&mupdf_state->current_preview);
+    ResetBitmapCache(&mupdf_state->current_interactive_tile);
+    ResetBitmapCache(&mupdf_state->current_final_zoom);
+    ResetAdjacentSlot(&mupdf_state->prev_slot, mupdf_state->ctx);
+    ResetAdjacentSlot(&mupdf_state->next_slot, mupdf_state->ctx);
+    mupdf_state->target_top_width = top_dims.width;
+    mupdf_state->target_top_height = top_dims.height;
+    mupdf_state->target_bottom_width = bottom_dims.width;
+    mupdf_state->target_bottom_height = bottom_dims.height;
+  }
+
   const int page_index = ClampMuPdfPageIndex(position, mupdf_state->page_count);
   position = page_index;
   DBG_LOGF_CAT(GetStatusReporter(), DBG_LEVEL_DEBUG, DBG_CAT_RENDER,
@@ -434,8 +457,9 @@ void Book::DrawCurrentMuPdfView(Text *ts) {
   const pdf_view_utils::PreviewLayout preview_layout =
       pdf_view_utils::ComputePreviewLayoutInBounds(
           preview_source_width, preview_source_height, kPdfPreviewPadding,
-          kPdfPreviewPadding, kPdfPreviewScreenWidth - 2 * kPdfPreviewPadding,
-          kPdfPreviewScreenHeight - 2 * kPdfPreviewPadding);
+          kPdfPreviewPadding,
+          mupdf_state->target_bottom_width - 2 * kPdfPreviewPadding,
+          mupdf_state->target_bottom_height - 2 * kPdfPreviewPadding);
 
   const int saved_style = ts->GetStyle();
   const int saved_color = ts->GetColorMode();
@@ -454,8 +478,8 @@ void Book::DrawCurrentMuPdfView(Text *ts) {
                mupdf_state->incremental.active ? 1 : 0);
 
   if (has_final_cache) {
-    BlitBitmapCacheViewport(ts, ts->screenleft, kPdfZoomScreenHeight,
-                            kPdfZoomScreenWidth, kPdfZoomScreenHeight,
+    BlitBitmapCacheViewport(ts, ts->screenleft, mupdf_state->target_top_height,
+                            mupdf_state->target_top_width, mupdf_state->target_top_height,
                             mupdf_state->current_final_zoom, viewport,
                             high_quality_viewport);
   } else if (mupdf_state->incremental.active &&
@@ -473,18 +497,18 @@ void Book::DrawCurrentMuPdfView(Text *ts) {
     const float rendered_in_vp =
         std::min(rendered_top_norm, viewport.top + vp_h) - viewport.top;
     const int split_y = (rendered_in_vp > 0.0f)
-        ? std::min(kPdfZoomScreenHeight,
-                   (int)(rendered_in_vp / vp_h * kPdfZoomScreenHeight + 0.5f))
+        ? std::min(mupdf_state->target_top_height,
+                   (int)(rendered_in_vp / vp_h * mupdf_state->target_top_height + 0.5f))
         : 0;
 
     if (split_y > 0) {
-      BlitRawBitmapViewportRegion(ts, ts->screenleft, kPdfZoomScreenHeight,
-                                  kPdfZoomScreenWidth, kPdfZoomScreenHeight,
+      BlitRawBitmapViewportRegion(ts, ts->screenleft, mupdf_state->target_top_height,
+                                  mupdf_state->target_top_width, mupdf_state->target_top_height,
                                   0, split_y, inc.partial_pixels,
                                   inc.partial_width, inc.partial_height,
                                   0.0f, 0.0f, 1.0f, 1.0f, viewport);
     }
-    if (split_y < kPdfZoomScreenHeight) {
+    if (split_y < mupdf_state->target_top_height) {
       // Cascade through available sources for the unrendered portion.
       // Each blit can fail if the cached bitmap doesn't cover the region
       // (e.g. stale interactive tile after viewport change on o3DS), so
@@ -492,25 +516,25 @@ void Book::DrawCurrentMuPdfView(Text *ts) {
       bool bottom_ok = false;
       if (has_interactive_tile) {
         bottom_ok = BlitBitmapCacheViewportRegion(
-            ts, ts->screenleft, kPdfZoomScreenHeight, kPdfZoomScreenWidth,
-            kPdfZoomScreenHeight, split_y, kPdfZoomScreenHeight,
+            ts, ts->screenleft, mupdf_state->target_top_height, mupdf_state->target_top_width,
+            mupdf_state->target_top_height, split_y, mupdf_state->target_top_height,
             mupdf_state->current_interactive_tile, viewport,
             high_quality_viewport);
       }
       if (!bottom_ok &&
           BitmapCacheValid(mupdf_state->current_preview, page_index)) {
         bottom_ok = BlitBitmapCacheViewportRegion(
-            ts, ts->screenleft, kPdfZoomScreenHeight, kPdfZoomScreenWidth,
-            kPdfZoomScreenHeight, split_y, kPdfZoomScreenHeight,
+            ts, ts->screenleft, mupdf_state->target_top_height, mupdf_state->target_top_width,
+            mupdf_state->target_top_height, split_y, mupdf_state->target_top_height,
             mupdf_state->current_preview, viewport, high_quality_viewport);
       }
       if (!bottom_ok) {
         // Final fallback: blit the partial buffer itself — unrendered strips
         // are initialised to kPdfPaper (white), so the lower portion shows
         // paper colour instead of the background left by ClearScreen.
-        BlitRawBitmapViewportRegion(ts, ts->screenleft, kPdfZoomScreenHeight,
-                                    kPdfZoomScreenWidth, kPdfZoomScreenHeight,
-                                    split_y, kPdfZoomScreenHeight,
+        BlitRawBitmapViewportRegion(ts, ts->screenleft, mupdf_state->target_top_height,
+                                    mupdf_state->target_top_width, mupdf_state->target_top_height,
+                                    split_y, mupdf_state->target_top_height,
                                     inc.partial_pixels,
                                     inc.partial_width, inc.partial_height,
                                     0.0f, 0.0f, 1.0f, 1.0f, viewport);
@@ -520,14 +544,14 @@ void Book::DrawCurrentMuPdfView(Text *ts) {
     // No incremental render in progress — use best available full-page source.
     bool ok = false;
     if (has_interactive_tile) {
-      ok = BlitBitmapCacheViewport(ts, ts->screenleft, kPdfZoomScreenHeight,
-                                   kPdfZoomScreenWidth, kPdfZoomScreenHeight,
+      ok = BlitBitmapCacheViewport(ts, ts->screenleft, mupdf_state->target_top_height,
+                                   mupdf_state->target_top_width, mupdf_state->target_top_height,
                                    mupdf_state->current_interactive_tile,
                                    viewport, high_quality_viewport);
     }
     if (!ok && BitmapCacheValid(mupdf_state->current_preview, page_index)) {
-      ok = BlitBitmapCacheViewport(ts, ts->screenleft, kPdfZoomScreenHeight,
-                                   kPdfZoomScreenWidth, kPdfZoomScreenHeight,
+      ok = BlitBitmapCacheViewport(ts, ts->screenleft, mupdf_state->target_top_height,
+                                   mupdf_state->target_top_width, mupdf_state->target_top_height,
                                    mupdf_state->current_preview, viewport,
                                    high_quality_viewport);
     }
@@ -547,7 +571,7 @@ void Book::DrawCurrentMuPdfView(Text *ts) {
       mupdf_state->current_preview.bitmap_width > 0 &&
       mupdf_state->current_preview.bitmap_height > 0) {
     fixed_layout_blit_utils::BlitRgb565BitmapScaledCrop(
-        ts, ts->screenright, kPdfPreviewScreenHeight, preview_layout.x,
+        ts, ts->screenright, mupdf_state->target_bottom_height, preview_layout.x,
         preview_layout.y, preview_layout.width, preview_layout.height,
         mupdf_state->current_preview.pixels,
         mupdf_state->current_preview.bitmap_width,

@@ -84,6 +84,10 @@ struct Book::MuPdfState {
           job_submitted(false), thread_handle(NULL) {}
   };
 
+  int target_top_width;
+  int target_top_height;
+  int target_bottom_width;
+  int target_bottom_height;
   fz_context *ctx;
   fz_document *doc;
   fz_outline *outline;
@@ -113,7 +117,9 @@ struct Book::MuPdfState {
   int page_too_complex_for_device; // page index skipped due to complexity, -1 if none
 
   MuPdfState()
-      : ctx(NULL), doc(NULL), outline(NULL), page_count(0),
+      : target_top_width(240), target_top_height(400),
+        target_bottom_width(240), target_bottom_height(320), ctx(NULL),
+        doc(NULL), outline(NULL), page_count(0),
         page_width(612.0f), page_height(792.0f), page_width_cache(),
         page_height_cache(), page_metrics_valid(), is_new_3ds(false),
         document_kind(app_flow_utils::MuPdfDocumentKind::Unknown),

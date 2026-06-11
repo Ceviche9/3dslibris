@@ -61,7 +61,9 @@ inline int ClampInt(int value, int lo, int hi) {
 }
 
 CbzDecodeTargetSize ComputeDecodeTargetSize(int src_width, int src_height,
-                                            int max_zoom_index) {
+                                            int max_zoom_index,
+                                            int target_width,
+                                            int target_height) {
   CbzDecodeTargetSize target;
   target.width = 1;
   target.height = 1;
@@ -70,8 +72,8 @@ CbzDecodeTargetSize ComputeDecodeTargetSize(int src_width, int src_height,
     return target;
 
   const float fit_scale =
-      std::min((float)fixed_layout_screen::kTopScreenWidth / (float)src_width,
-               (float)fixed_layout_screen::kTopScreenHeight /
+      std::min((float)target_width / (float)src_width,
+               (float)target_height /
                    (float)src_height);
   const float zoom = pdf_view_utils::ZoomForIndex(max_zoom_index);
   const float source_scale =
@@ -181,7 +183,8 @@ bool ResampleRgb8ToBitmap(const unsigned char *src, int src_width,
 #ifdef __3DS__
 
 bool DecodeImageToBitmapWithMuPdf(const std::vector<unsigned char> &bytes,
-                                  int max_zoom_index, CbzDecodedPage *out) {
+                                  int max_zoom_index, int target_width,
+                                  int target_height, CbzDecodedPage *out) {
   if (!out || bytes.empty()) {
     ClearDecodedPage(out);
     SetLastCbzDecodeError("invalid mupdf image decode parameters");
@@ -218,7 +221,8 @@ bool DecodeImageToBitmapWithMuPdf(const std::vector<unsigned char> &bytes,
     out->original_height = image->h;
 
     const CbzDecodeTargetSize target =
-        ComputeDecodeTargetSize(image->w, image->h, max_zoom_index);
+        ComputeDecodeTargetSize(image->w, image->h, max_zoom_index,
+                                target_width, target_height);
 
     int l2factor = 0;
     while ((image->w >> (l2factor + 1)) >= target.width + 2 &&
@@ -368,7 +372,8 @@ const char *GetLastCbzDecodeError() {
 }
 
 bool DecodeCbzPageImage(const std::vector<unsigned char> &bytes,
-                        int max_zoom_index, CbzDecodedPage *out) {
+                        int max_zoom_index, int target_width,
+                        int target_height, CbzDecodedPage *out) {
   if (!out)
     return false;
 
@@ -381,7 +386,8 @@ bool DecodeCbzPageImage(const std::vector<unsigned char> &bytes,
   }
 
 #ifdef __3DS__
-  return DecodeImageToBitmapWithMuPdf(bytes, max_zoom_index, out);
+  return DecodeImageToBitmapWithMuPdf(bytes, max_zoom_index, target_width,
+                                      target_height, out);
 #else
   int src_width = 0;
   int src_height = 0;
@@ -398,7 +404,8 @@ bool DecodeCbzPageImage(const std::vector<unsigned char> &bytes,
   out->original_height = src_height;
 
   const CbzDecodeTargetSize target =
-      ComputeDecodeTargetSize(src_width, src_height, max_zoom_index);
+      ComputeDecodeTargetSize(src_width, src_height, max_zoom_index,
+                              target_width, target_height);
 
   ScopedStbiImage decoded(stb_image_gif_utils::LoadFromMemory(
       bytes.data(), (int)bytes.size(), &src_width, &src_height, &src_components,

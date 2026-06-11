@@ -7,6 +7,7 @@
 #include "formats/cbz/cbz_worker.h"
 #include "formats/common/book_error.h"
 #include "formats/common/format_limits.h"
+#include "formats/common/fixed_layout_screen_constants.h"
 #include "formats/common/pdf_view_utils.h"
 #include "shared/debug_log.h"
 #include "shared/debug_runtime_mode.h"
@@ -194,7 +195,8 @@ int cbz_extract_cover(Book *book, const std::string &cbzpath) {
   }
 
   CbzDecodedPage decoded;
-  if (!DecodeCbzPageImage(bytes, 0, &decoded) ||
+  if (!DecodeCbzPageImage(bytes, 0, fixed_layout_screen::kTopScreenWidth,
+                          fixed_layout_screen::kTopScreenHeight, &decoded) ||
       !IsValidCbzBitmap(decoded.source_bitmap)) {
     return 4;
   }

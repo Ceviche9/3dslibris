@@ -154,7 +154,7 @@ bool EnsureCurrentMuPdfPreviewCache(Book::MuPdfState *mupdf_state, int page_inde
   RenderedMuPdfBitmap rendered;
   float page_width = mupdf_state->page_width;
   float page_height = mupdf_state->page_height;
-  const float preview_scale = ComputeMuPdfPreviewScale(page_width, page_height);
+  const float preview_scale = ComputeMuPdfPreviewScale(page_width, page_height, mupdf_state->target_bottom_width, mupdf_state->target_bottom_height);
   DBG_LOGF_CAT(
       mupdf_state->reporter, DBG_LEVEL_DEBUG, DBG_CAT_RENDER,
       "MUPDF preview: render-begin page=%d scale=%.4f page_size=(%.2f,%.2f)",
@@ -218,7 +218,8 @@ bool EnsureCurrentMuPdfInteractiveTile(Book::MuPdfState *mupdf_state,
   const bool render_ok = RenderMuPdfBitmap(mupdf_state->ctx, mupdf_state->doc, page_index,
                        kPdfInteractiveScale *
                            ComputeFitScale(page_width, page_height,
-                                           kPdfZoomScreenWidth, kPdfZoomScreenHeight) *
+                                           mupdf_state->target_top_width,
+                                           mupdf_state->target_top_height) *
                            ComputeEffectiveMuPdfZoom(
                                mupdf_state->document_kind,
                                mupdf_state->viewport.zoom_index),
@@ -537,7 +538,9 @@ bool PumpMuPdfIncrementalStrip(Book::MuPdfState *mupdf_state, int page_index) {
     const float scale = ComputeMuPdfFinalScale(mupdf_state->document_kind,
                                                mupdf_state->page_width,
                                                mupdf_state->page_height,
-                                               mupdf_state->viewport.max_zoom_index);
+                                               mupdf_state->viewport.max_zoom_index,
+                                               mupdf_state->target_top_width,
+                                               mupdf_state->target_top_height);
     fz_page *pg = NULL;
     fz_rect bounds = fz_empty_rect;
     fz_var(pg);
@@ -664,7 +667,7 @@ bool PrepareAdjacentMuPdfSlot(Book::MuPdfState *mupdf_state, int current_page,
   RenderedMuPdfBitmap preview;
   fz_display_list *display_list = NULL;
   if (!RenderMuPdfBitmap(mupdf_state->ctx, mupdf_state->doc, page_index,
-                       ComputeMuPdfPreviewScale(page_width, page_height),
+                       ComputeMuPdfPreviewScale(page_width, page_height, mupdf_state->target_bottom_width, mupdf_state->target_bottom_height),
                        &preview, &page_width, &page_height, NULL, NULL,
                        &display_list, mupdf_state->reporter) ||
       !display_list) {
@@ -682,7 +685,8 @@ bool PrepareAdjacentMuPdfSlot(Book::MuPdfState *mupdf_state, int current_page,
     const bool render_ok = RenderMuPdfBitmap(mupdf_state->ctx, mupdf_state->doc, page_index,
                          kPdfInteractiveScale *
                              ComputeFitScale(page_width, page_height,
-                                             kPdfZoomScreenWidth, kPdfZoomScreenHeight) *
+                                             mupdf_state->target_top_width,
+                                             mupdf_state->target_top_height) *
                              ComputeEffectiveMuPdfZoom(
                                  mupdf_state->document_kind,
                                  mupdf_state->viewport.zoom_index),

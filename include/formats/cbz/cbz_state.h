@@ -62,6 +62,10 @@ struct Book::CbzState {
   };
 
   std::string archive_path;
+  int target_top_width;
+  int target_top_height;
+  int target_bottom_width;
+  int target_bottom_height;
   std::vector<CbzPageEntry> entries;
   u16 page_count;
   bool is_new_3ds;
@@ -81,7 +85,9 @@ struct Book::CbzState {
   std::string last_error;
 
   CbzState()
-      : archive_path(), entries(), page_count(0), is_new_3ds(false),
+      : archive_path(), target_top_width(240), target_top_height(400),
+        target_bottom_width(240), target_bottom_height(320), entries(),
+        page_count(0), is_new_3ds(false),
         viewport(), page_width(1.0f), page_height(1.0f),
         current_source(),
         current_preview(), current_interactive(), prev_slot(), next_slot(),

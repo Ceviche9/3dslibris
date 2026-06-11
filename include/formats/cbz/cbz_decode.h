@@ -15,6 +15,7 @@ struct CbzDecodedPage {
 
 const char *GetLastCbzDecodeError();
 bool DecodeCbzPageImage(const std::vector<unsigned char> &bytes,
-                        int max_zoom_index, CbzDecodedPage *out);
+                        int max_zoom_index, int target_width,
+                        int target_height, CbzDecodedPage *out);
 bool ScaleCbzBitmap(const CbzBitmap &src, int dst_width, int dst_height,
                     bool high_quality, CbzBitmap *out);

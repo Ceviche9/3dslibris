@@ -29,7 +29,7 @@ void ExpectTrue(const char *label, bool value) {
 void TestDecodePath(const char *path) {
   const std::vector<unsigned char> bytes = ReadFile(path);
   CbzDecodedPage decoded;
-  ExpectTrue("decode", DecodeCbzPageImage(bytes, 5, &decoded));
+  ExpectTrue("decode", DecodeCbzPageImage(bytes, 5, 240, 400, &decoded));
   ExpectTrue("original width", decoded.original_width > 0);
   ExpectTrue("original height", decoded.original_height > 0);
   ExpectTrue("scaled width", decoded.source_bitmap.width > 0);

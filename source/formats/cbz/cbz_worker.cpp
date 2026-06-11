@@ -18,6 +18,8 @@ static const size_t kCbzWorkerStackBytes = 256u * 1024u;
 bool BuildCbzSlotFromPage(const std::string &archive_path,
                           const std::vector<CbzPageEntry> &entries,
                           int page_index, int zoom_index, int max_zoom_index,
+                          int top_width, int top_height,
+                          int bottom_width, int bottom_height,
                           Book::CbzState::AdjacentSlot *out) {
   if (!out || page_index < 0 || page_index >= (int)entries.size())
     return false;
@@ -32,7 +34,7 @@ bool BuildCbzSlotFromPage(const std::string &archive_path,
   int decode_zoom_index = std::min(zoom_index, max_zoom_index);
   bool decoded_ok = false;
   for (int try_zoom = decode_zoom_index; try_zoom >= 0; --try_zoom) {
-    if (DecodeCbzPageImage(bytes, try_zoom, &decoded)) {
+    if (DecodeCbzPageImage(bytes, try_zoom, top_width, top_height, &decoded)) {
       decode_zoom_index = try_zoom;
       decoded_ok = true;
       break;
@@ -44,9 +46,9 @@ bool BuildCbzSlotFromPage(const std::string &archive_path,
   const pdf_view_utils::PreviewLayout preview_layout =
       pdf_view_utils::ComputePreviewLayout(
           (float)decoded.original_width, (float)decoded.original_height,
-          fixed_layout_screen::kBottomScreenWidth -
+          bottom_width -
               2 * fixed_layout_preview::kPadding,
-          fixed_layout_screen::kBottomScreenHeight -
+          bottom_height -
               2 * fixed_layout_preview::kPadding);
   CbzBitmap preview_bitmap;
   if (!ScaleCbzBitmap(decoded.source_bitmap, std::max(1, preview_layout.width),
@@ -56,9 +58,9 @@ bool BuildCbzSlotFromPage(const std::string &archive_path,
   }
 
   const float fit_scale =
-      std::min((float)fixed_layout_screen::kTopScreenWidth /
+      std::min((float)top_width /
                    std::max(1, decoded.original_width),
-               (float)fixed_layout_screen::kTopScreenHeight /
+               (float)top_height /
                    std::max(1, decoded.original_height));
   const float zoom = pdf_view_utils::ZoomForIndex(zoom_index);
   const int interactive_width = std::max(
@@ -108,7 +110,10 @@ void CbzWorkerThreadFunc(void *arg) {
     ResetCbzAdjacentSlot(&w->result_slot);
     w->job_result = BuildCbzSlotFromPage(
         w->job_archive_path, *w->job_entries, w->job_page_index,
-        w->job_zoom_index, cbz_state->viewport.max_zoom_index, &w->result_slot);
+        w->job_zoom_index, cbz_state->viewport.max_zoom_index,
+        cbz_state->target_top_width, cbz_state->target_top_height,
+        cbz_state->target_bottom_width, cbz_state->target_bottom_height,
+        &w->result_slot);
 
     __atomic_store_n(&w->job_pending, false, __ATOMIC_RELEASE);
     LightEvent_Signal(&w->done_event);

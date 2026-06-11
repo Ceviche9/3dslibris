@@ -124,11 +124,31 @@ pdf_view_utils::NormalizedRect ComputeCurrentMuPdfViewport(
   float width = 1.0f;
   float height = 1.0f;
   GetMuPdfPreviewContentBounds(mupdf_state, &left, &top, &width, &height);
-  return ComputeMuPdfViewportRect(
-      mupdf_state->page_width, mupdf_state->page_height,
-      mupdf_state->document_kind, mupdf_state->viewport.zoom_index,
-      mupdf_state->viewport.center_x, mupdf_state->viewport.center_y, left,
-      top, width, height);
+  const MuPdfNavigationBounds nav =
+      GetMuPdfNavigationBounds(left, top, width, height);
+  const float local_center_x =
+      std::max(0.0f, std::min(1.0f,
+          (mupdf_state->viewport.center_x - nav.left) /
+              std::max(0.0001f, nav.width)));
+  const float local_center_y =
+      std::max(0.0f, std::min(1.0f,
+          (mupdf_state->viewport.center_y - nav.top) /
+              std::max(0.0001f, nav.height)));
+  const pdf_view_utils::NormalizedRect local =
+      pdf_view_utils::ComputeViewportRect(
+          std::max(1.0f, mupdf_state->page_width * nav.width),
+          std::max(1.0f, mupdf_state->page_height * nav.height),
+          ComputeEffectiveMuPdfZoom(mupdf_state->document_kind,
+                                    mupdf_state->viewport.zoom_index),
+          (float)mupdf_state->target_top_width,
+          (float)mupdf_state->target_top_height, local_center_x,
+          local_center_y);
+  pdf_view_utils::NormalizedRect out;
+  out.left = nav.left + local.left * nav.width;
+  out.top = nav.top + local.top * nav.height;
+  out.width = local.width * nav.width;
+  out.height = local.height * nav.height;
+  return out;
 }
 
 bool Book::ChangeMuPdfZoom(int delta) {

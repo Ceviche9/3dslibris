@@ -106,12 +106,14 @@ void ResetCbzPageBitmap(Book::CbzState::PageBitmap *page_bitmap) {
 
 bool DecodeCbzPageImageWithFallback(const std::vector<unsigned char> &bytes,
                                     int preferred_zoom_index,
+                                    int target_width, int target_height,
                                     CbzDecodedPage *decoded,
                                     int *used_zoom_index) {
   if (!decoded)
     return false;
   for (int try_zoom = preferred_zoom_index; try_zoom >= 0; --try_zoom) {
-    if (DecodeCbzPageImage(bytes, try_zoom, decoded)) {
+    if (DecodeCbzPageImage(bytes, try_zoom, target_width, target_height,
+                           decoded)) {
       if (used_zoom_index)
         *used_zoom_index = try_zoom;
       return true;
@@ -159,8 +161,10 @@ pdf_view_utils::NormalizedRect ComputeCurrentCbzViewport(
       cbz_state ? cbz_state->page_width : 1.0f,
       cbz_state ? cbz_state->page_height : 1.0f,
       cbz_state ? pdf_view_utils::ZoomForIndex(cbz_state->viewport.zoom_index) : 1.0f,
-      (float)fixed_layout_screen::kTopScreenWidth,
-      (float)fixed_layout_screen::kTopScreenHeight,
+      (float)(cbz_state ? cbz_state->target_top_width
+                       : fixed_layout_screen::kTopScreenWidth),
+      (float)(cbz_state ? cbz_state->target_top_height
+                       : fixed_layout_screen::kTopScreenHeight),
       cbz_state ? cbz_state->viewport.center_x : 0.5f,
       cbz_state ? cbz_state->viewport.center_y : 0.5f);
 }
@@ -210,7 +214,9 @@ bool EnsureCbzSourceLoaded(Book::CbzState *cbz_state, int page_index,
 
   CbzDecodedPage decoded;
   int used_zoom_index = -1;
-  if (!DecodeCbzPageImageWithFallback(bytes, zoom_index, &decoded,
+  if (!DecodeCbzPageImageWithFallback(
+          bytes, zoom_index, cbz_state->target_top_width,
+          cbz_state->target_top_height, &decoded,
                                       &used_zoom_index)) {
     cbz_state->last_error = GetLastCbzDecodeError();
     cbz_state->failed_page = page_index;
@@ -245,9 +251,9 @@ bool EnsureCbzPreviewCache(Book::CbzState *cbz_state, int page_index) {
   const pdf_view_utils::PreviewLayout preview_layout =
       pdf_view_utils::ComputePreviewLayout(
           cbz_state->page_width, cbz_state->page_height,
-          fixed_layout_screen::kBottomScreenWidth -
+          cbz_state->target_bottom_width -
               2 * fixed_layout_preview::kPadding,
-          fixed_layout_screen::kBottomScreenHeight -
+          cbz_state->target_bottom_height -
               2 * fixed_layout_preview::kPadding);
   CbzBitmap scaled;
   if (!ScaleCbzBitmap(cbz_state->current_source.bitmap,
@@ -276,9 +282,9 @@ bool EnsureCbzInteractiveCache(Book::CbzState *cbz_state, int page_index) {
     return false;
 
   const float fit_scale =
-      std::min((float)fixed_layout_screen::kTopScreenWidth /
+      std::min((float)cbz_state->target_top_width /
                    std::max(1.0f, cbz_state->page_width),
-               (float)fixed_layout_screen::kTopScreenHeight /
+               (float)cbz_state->target_top_height /
                    std::max(1.0f, cbz_state->page_height));
   const float zoom = pdf_view_utils::ZoomForIndex(cbz_state->viewport.zoom_index);
   const int target_width = std::max(
@@ -356,7 +362,7 @@ void DrawCbzPreviewPanel(Book *book, Text *ts,
                fixed_layout_preview::kPaper);
   if (CbzPreviewCacheValid(cbz_state->current_preview, page_index)) {
     fixed_layout_blit_utils::BlitRgb565BitmapScaledCrop(
-        ts, ts->screenright, fixed_layout_screen::kBottomScreenHeight,
+        ts, ts->screenright, cbz_state->target_bottom_height,
         preview_layout.x, preview_layout.y, preview_layout.width,
         preview_layout.height, cbz_state->current_preview.pixels,
         cbz_state->current_preview.bitmap_width,
@@ -436,6 +442,29 @@ void Book::DrawCurrentCbzView(Text *ts) {
   if (cbz_state->page_count == 0)
     return;
 
+  const fixed_layout_screen::TargetDimensions top_dims =
+      fixed_layout_screen::TargetDims((unsigned char)GetOrientation(), true);
+  const fixed_layout_screen::TargetDimensions bottom_dims =
+      fixed_layout_screen::TargetDims((unsigned char)GetOrientation(), false);
+  if (cbz_state->target_top_width != top_dims.width ||
+      cbz_state->target_top_height != top_dims.height ||
+      cbz_state->target_bottom_width != bottom_dims.width ||
+      cbz_state->target_bottom_height != bottom_dims.height) {
+    fixed_layout_viewport_utils::ResetViewportForTargetChange(
+        &cbz_state->viewport, pdf_view_utils::DefaultZoomIndex());
+    ShutdownCbzWorker(cbz_state);
+    ResetCbzPageBitmap(&cbz_state->current_source);
+    ResetCbzBitmapCache(&cbz_state->current_preview);
+    ResetCbzBitmapCache(&cbz_state->current_interactive);
+    ResetCbzAdjacentSlot(&cbz_state->prev_slot);
+    ResetCbzAdjacentSlot(&cbz_state->next_slot);
+    cbz_state->target_top_width = top_dims.width;
+    cbz_state->target_top_height = top_dims.height;
+    cbz_state->target_bottom_width = bottom_dims.width;
+    cbz_state->target_bottom_height = bottom_dims.height;
+    InitCbzWorker(cbz_state);
+  }
+
   const int page_index = ClampCbzPageIndex(GetPosition(), cbz_state->page_count);
   SetPosition(page_index);
 
@@ -482,9 +511,9 @@ void Book::DrawCurrentCbzView(Text *ts) {
       pdf_view_utils::ComputePreviewLayoutInBounds(
           cbz_state->page_width, cbz_state->page_height,
           fixed_layout_preview::kPadding, fixed_layout_preview::kPadding,
-          fixed_layout_screen::kBottomScreenWidth -
+          cbz_state->target_bottom_width -
               2 * fixed_layout_preview::kPadding,
-          fixed_layout_screen::kBottomScreenHeight -
+          cbz_state->target_bottom_height -
               2 * fixed_layout_preview::kPadding);
 
   ScopedTextRenderState saved_state(ts);
@@ -495,16 +524,16 @@ void Book::DrawCurrentCbzView(Text *ts) {
   ts->ClearScreen();
   if (has_interactive) {
     BlitCbzCacheViewport(ts, ts->screenleft,
-                         fixed_layout_screen::kTopScreenHeight,
-                         fixed_layout_screen::kTopScreenWidth,
-                         fixed_layout_screen::kTopScreenHeight,
+                         cbz_state->target_top_height,
+                         cbz_state->target_top_width,
+                         cbz_state->target_top_height,
                          cbz_state->current_interactive, viewport,
                          high_quality_viewport);
   } else {
     BlitCbzCacheViewport(ts, ts->screenleft,
-                         fixed_layout_screen::kTopScreenHeight,
-                         fixed_layout_screen::kTopScreenWidth,
-                         fixed_layout_screen::kTopScreenHeight,
+                         cbz_state->target_top_height,
+                         cbz_state->target_top_width,
+                         cbz_state->target_top_height,
                          cbz_state->current_preview, viewport,
                          high_quality_viewport);
   }
@@ -559,9 +588,9 @@ bool Book::MoveCbzViewportToPreview(int touch_x, int touch_y) {
       pdf_view_utils::ComputePreviewLayoutInBounds(
           cbz_state->page_width, cbz_state->page_height,
           fixed_layout_preview::kPadding, fixed_layout_preview::kPadding,
-          fixed_layout_screen::kBottomScreenWidth -
+          cbz_state->target_bottom_width -
               2 * fixed_layout_preview::kPadding,
-          fixed_layout_screen::kBottomScreenHeight -
+          cbz_state->target_bottom_height -
               2 * fixed_layout_preview::kPadding);
   const pdf_view_utils::NormalizedRect viewport =
       ComputeCurrentCbzViewport(cbz_state);

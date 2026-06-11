@@ -373,17 +373,19 @@ bool RenderMuPdfBitmap(fz_context *ctx, fz_document *doc, int page_index,
   return ok;
 }
 
-float ComputeMuPdfPreviewScale(float page_width, float page_height) {
+float ComputeMuPdfPreviewScale(float page_width, float page_height,
+                               int target_width, int target_height) {
   return ComputeFitScale(page_width, page_height,
-                         kPdfPreviewScreenWidth - 2 * kPdfPreviewPadding,
-                         kPdfPreviewScreenHeight - 2 * kPdfPreviewPadding);
+                         target_width - 2 * kPdfPreviewPadding,
+                         target_height - 2 * kPdfPreviewPadding);
 }
 
 float ComputeMuPdfFinalScale(app_flow_utils::MuPdfDocumentKind document_kind,
                              float page_width, float page_height,
-                             int max_zoom_index) {
-  return ComputeFitScale(page_width, page_height, kPdfZoomScreenWidth,
-                         kPdfZoomScreenHeight) *
+                             int max_zoom_index, int target_width,
+                             int target_height) {
+  return ComputeFitScale(page_width, page_height, target_width,
+                         target_height) *
          ComputeEffectiveMuPdfZoom(document_kind, max_zoom_index);
 }
 void AddMuPdfOutlineEntries(Book *book, fz_context *ctx, fz_document *doc,

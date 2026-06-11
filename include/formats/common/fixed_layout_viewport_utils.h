@@ -72,4 +72,14 @@ inline void ResetViewport(ViewportState *state,
   state->interaction_active = false;
 }
 
+inline void ResetViewportForTargetChange(ViewportState *state,
+                                         int fit_zoom_index) {
+  if (!state)
+    return;
+  state->zoom_index = ClampZoomIndex(fit_zoom_index, state->max_zoom_index);
+  state->center_x = 0.5f;
+  state->center_y = 0.5f;
+  state->interaction_active = false;
+}
+
 } // namespace fixed_layout_viewport_utils
