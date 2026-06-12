@@ -15,10 +15,7 @@
 #include "shared/screen_dimensions.h"
 
 #include <algorithm>
-#include <dirent.h>
 #include <sys/types.h>
-#include <errno.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/stat.h>
@@ -29,7 +26,6 @@
 #include "book/book.h"
 #include "book/book_renderer.h"
 #include "library/browser_view_utils.h"
-#include "utf8proc.h"
 #include "ui/button.h"
 #include "ui/ui_button_skin.h"
 #include "shared/color_utils.h"
@@ -40,6 +36,7 @@
 #include "settings/prefs.h"
 #include "settings/prefs_action_utils.h"
 #include "settings/prefs_button_context_utils.h"
+#include "settings/cache_cleanup_utils.h"
 #include "settings/prefs_input_utils.h"
 #include "settings/prefs_style_value_utils.h"
 #include "ui/text.h"
@@ -1054,48 +1051,6 @@ void SettingsController::PrefsRefreshButton(int index) {
   app_.MarkPrefsDirty();
 }
 
-// On macOS/Azahar, APFS returns NFD filenames from readdir, but the 3DS FS
-// service stored the file under NFC UTF-16. Normalize d_name to NFC so
-// libctru's UTF-8→UTF-16 conversion produces a matching codepoint.
-static void RemoveFromDir(const char *dir, const char *name) {
-  char path[512];
-  uint8_t *nfc = nullptr;
-  utf8proc_ssize_t nfc_len = utf8proc_map(
-      (const uint8_t *)name, 0, &nfc,
-      (utf8proc_option_t)(UTF8PROC_NULLTERM | UTF8PROC_STABLE | UTF8PROC_COMPOSE));
-  const char *safe_name = (nfc_len >= 0 && nfc) ? (const char *)nfc : name;
-  snprintf(path, sizeof(path), "%s/%s", dir, safe_name);
-  int rc = remove(path);
-  free(nfc);
-#ifdef DSLIBRIS_DEBUG
-  if (rc != 0) {
-    App *app_dbg = App::GetInstance();
-    if (app_dbg)
-      DBG_LOGF(app_dbg, "DeleteDirContents: remove failed path=%s rc=%d errno=%d",
-               path, rc, errno);
-  }
-#endif
-}
-
-static void DeleteDirContents(const char *dir) {
-  DIR *d = opendir(dir);
-  if (!d) {
-#ifdef DSLIBRIS_DEBUG
-    App *app_dbg = App::GetInstance();
-    if (app_dbg)
-      DBG_LOGF(app_dbg, "DeleteDirContents: opendir failed dir=%s errno=%d", dir, errno);
-#endif
-    return;
-  }
-  struct dirent *ent;
-  while ((ent = readdir(d)) != NULL) {
-    if (ent->d_name[0] == '.')
-      continue;
-    RemoveFromDir(dir, ent->d_name);
-  }
-  closedir(d);
-}
-
 void SettingsController::ClearAllCaches() {
   for (int i = 0; i < app_.BookCount(); i++) {
     Book *b = app_.books[i];
@@ -1105,11 +1060,22 @@ void SettingsController::ClearAllCaches() {
     b->SetPendingMobiPageCacheSave(false);
   }
 
-  DeleteDirContents(paths::GetEpubCacheDir().c_str());
-  DeleteDirContents(paths::GetMobiCacheDir().c_str());
-  DeleteDirContents(paths::GetMobiCoverMetaCacheDir().c_str());
-  DeleteDirContents(paths::GetMetaCacheDir().c_str());
-  DeleteDirContents(paths::GetCoverCacheDir().c_str());
+  const std::string cache_dirs[] = {
+      paths::GetEpubCacheDir(), paths::GetMobiCacheDir(),
+      paths::GetMobiCoverMetaCacheDir(), paths::GetMetaCacheDir(),
+      paths::GetCoverCacheDir()};
+  for (size_t i = 0; i < sizeof(cache_dirs) / sizeof(cache_dirs[0]); i++) {
+#ifdef DSLIBRIS_DEBUG
+    const settings::CacheCleanupResult result =
+        settings::DeleteCacheDirectoryContents(cache_dirs[i].c_str());
+    if (!result.opened || result.failed > 0)
+      DBG_LOGF(&app_, "ClearAllCaches: dir=%s opened=%d removed=%d failed=%d",
+               cache_dirs[i].c_str(), result.opened ? 1 : 0, result.removed,
+               result.failed);
+#else
+    settings::DeleteCacheDirectoryContents(cache_dirs[i].c_str());
+#endif
+  }
 
   for (int i = 0; i < app_.BookCount(); i++) {
     Book *b = app_.books[i];
