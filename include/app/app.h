@@ -60,6 +60,7 @@ https://github.com/rhaleblian/dslibris
 
 #include "menus/bookmark_menu.h"
 #include "menus/chapter_menu.h"
+#include "library/library_job.h"
 #include "settings/font.h"
 #include "ui/button.h"
 #include "shared/main.h"
@@ -96,19 +97,6 @@ enum class AppMode : u8
   Chapters = 9,
   Opening = 10,
   BookInfo = 11,
-};
-
-enum app_job_type_t
-{
-  APP_JOB_INDEX_METADATA,
-  APP_JOB_EXTRACT_COVER,
-  APP_JOB_RESOLVE_TOC
-};
-
-struct app_job_t
-{
-  app_job_type_t type;
-  Book *book;
 };
 
 //! \brief Main application.
