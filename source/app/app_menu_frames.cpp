@@ -351,46 +351,6 @@ static std::string ApplyAsciiTextTransform(
   return out;
 }
 
-static std::string CollapseExcessBlankLines(const std::string &in) {
-  if (in.empty())
-    return in;
-  std::string out;
-  out.reserve(in.size());
-  int newline_run = 0;
-  for (size_t i = 0; i < in.size(); i++) {
-    char c = in[i];
-    if (c == '\n') {
-      if (newline_run < 2)
-        out.push_back(c);
-      newline_run++;
-    } else {
-      newline_run = 0;
-      out.push_back(c);
-    }
-  }
-  return out;
-}
-
-static void AppendSingleNewline(std::string *out) {
-  if (!out)
-    return;
-  if (out->empty() || (*out)[out->size() - 1] != '\n')
-    out->push_back('\n');
-}
-
-static void AppendParagraphBreak(std::string *out) {
-  if (!out)
-    return;
-  if (out->empty()) {
-    out->push_back('\n');
-    return;
-  }
-  if ((*out)[out->size() - 1] != '\n')
-    out->push_back('\n');
-  if (out->size() < 2 || (*out)[out->size() - 2] != '\n')
-    out->push_back('\n');
-}
-
 struct StyledRenderLine {
   std::string text;
   u8 style;
