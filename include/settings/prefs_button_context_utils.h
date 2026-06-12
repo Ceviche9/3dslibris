@@ -4,6 +4,21 @@
 
 namespace settings {
 
+struct PrefsPageContext {
+  bool from_book;
+  int page;
+  bool fixed_layout;
+  bool include_line_wrap_fix;
+
+  PrefsPageContext()
+      : from_book(false), page(0), fixed_layout(false),
+        include_line_wrap_fix(false) {}
+};
+
+unsigned char PrefsPageButtonCount(const PrefsPageContext &context);
+int PrefsPageButtonForSlot(const PrefsPageContext &context,
+                           unsigned char slot);
+
 unsigned char VisiblePrefsButtonCount(bool from_book,
                                       bool include_line_wrap_fix);
 int PrefsButtonForVisibleSlot(bool from_book, bool include_line_wrap_fix,

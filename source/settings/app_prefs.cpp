@@ -50,16 +50,6 @@ static const int PREFS_LIBRARY_BTN_W = 104;
 static const int PREFS_LIBRARY_BTN_H = 26;
 
 
-static const int kPage2Buttons[] = {
-    PREFS_BUTTON_FONT_CONFIG,
-    PREFS_BUTTON_FONTSIZE,
-    PREFS_BUTTON_LINE_SPACING,
-    PREFS_BUTTON_PARASPACING,
-    PREFS_BUTTON_PUBLISHER_TEXT_INDENT,
-    PREFS_BUTTON_PUBLISHER_BLOCK_MARGINS,
-};
-static const int kPage2ButtonCount = 6;
-
 static const int PREFS_ROW_X = 5;
 static const int PREFS_ROW_W = 230;
 static const u32 kGoToPageCoarseStep = 10;
@@ -260,32 +250,26 @@ SettingsController::SettingsController(App &app)
 
 int SettingsController::EffectiveVisibleCount() const {
   const bool is_book_ctx = app_.IsBookSettingsContext();
-  if (!is_book_ctx && prefs_general_page_ == 1)
-    return kPage2ButtonCount;
-  if (is_book_ctx && prefs_general_page_ == 1)
-    return settings::BookPrefsPage2ButtonCount(
-        app_.GetCurrentBook() && app_.GetCurrentBook()->IsFixedLayout());
-  if (!is_book_ctx && prefs_general_page_ == 2)
-    return (int)settings::ExtraPrefsButtonCount();
-  return (int)settings::VisiblePrefsButtonCount(
-      is_book_ctx,
-      CurrentBookUsesLineWrapFixSlot(app_.GetCurrentBook(), is_book_ctx));
+  settings::PrefsPageContext context;
+  context.from_book = is_book_ctx;
+  context.page = prefs_general_page_;
+  context.fixed_layout =
+      app_.GetCurrentBook() && app_.GetCurrentBook()->IsFixedLayout();
+  context.include_line_wrap_fix =
+      CurrentBookUsesLineWrapFixSlot(app_.GetCurrentBook(), is_book_ctx);
+  return (int)settings::PrefsPageButtonCount(context);
 }
 
 int SettingsController::EffectiveButtonForSlot(int slot) const {
   const bool is_book_ctx = app_.IsBookSettingsContext();
-  if (!is_book_ctx && prefs_general_page_ == 1)
-    return (slot >= 0 && slot < kPage2ButtonCount) ? kPage2Buttons[slot] : kPage2Buttons[0];
-  if (is_book_ctx && prefs_general_page_ == 1)
-    return settings::BookPrefsPage2ButtonForSlot(
-        app_.GetCurrentBook() && app_.GetCurrentBook()->IsFixedLayout(),
-        (u8)slot);
-  if (!is_book_ctx && prefs_general_page_ == 2)
-    return settings::ExtraPrefsButtonForSlot((u8)slot);
-  return settings::PrefsButtonForVisibleSlot(
-      is_book_ctx,
-      CurrentBookUsesLineWrapFixSlot(app_.GetCurrentBook(), is_book_ctx),
-      (u8)slot);
+  settings::PrefsPageContext context;
+  context.from_book = is_book_ctx;
+  context.page = prefs_general_page_;
+  context.fixed_layout =
+      app_.GetCurrentBook() && app_.GetCurrentBook()->IsFixedLayout();
+  context.include_line_wrap_fix =
+      CurrentBookUsesLineWrapFixSlot(app_.GetCurrentBook(), is_book_ctx);
+  return settings::PrefsPageButtonForSlot(context, (u8)slot);
 }
 
 void SettingsController::GoToPrefsPage(int page) {
