@@ -40,6 +40,7 @@
 #include "settings/prefs.h"
 #include "settings/prefs_button_context_utils.h"
 #include "settings/prefs_input_utils.h"
+#include "settings/prefs_style_value_utils.h"
 #include "ui/text.h"
 #include "ui/screen_layout_constants.h"
 #include "ui/text_limits.h"
@@ -203,16 +204,14 @@ static int CycleBookOverride(int current) {
   return -1;
 }
 
-static int EffectiveBookFontSize(App *app, Book *book) {
-  if (book && book->GetStyleFontSizeOverride() >= 0)
-    return book->GetStyleFontSizeOverride();
-  return app ? app->reader_font_size : 12;
-}
-
-static int EffectiveBookLineSpacing(App *app, Book *book) {
-  if (book && book->GetStyleLineSpacingOverride() >= 0)
-    return book->GetStyleLineSpacingOverride();
-  return app ? app->reader_line_spacing : 0;
+static settings::StyleValueContext StyleValueForBook(
+    bool is_book_ctx, Book *book, int global_value, int override_value) {
+  settings::StyleValueContext context;
+  context.from_book = is_book_ctx && book;
+  context.uses_text_layout = !book || book->UsesTextLayoutSettings();
+  context.global_value = global_value;
+  context.override_value = override_value;
+  return context;
 }
 
 static void TogglePublisherTextIndentSetting(App *app, Book *book, bool is_book_ctx) {
@@ -684,7 +683,9 @@ void SettingsController::PrefsIncreasePixelSize() {
     return;
   Book *book = app_.GetCurrentBook();
   if (app_.IsBookSettingsContext() && book) {
-    int value = EffectiveBookFontSize(&app_, book);
+    const int value = settings::EffectiveStyleValue(StyleValueForBook(
+        true, book, app_.reader_font_size,
+        book->GetStyleFontSizeOverride()));
     if (value < kTextPixelSizeMax) {
       book->SetStyleFontSizeOverride(value + 1);
       app_.ts->SetPixelSize((u8)(value + 1));
@@ -707,7 +708,9 @@ void SettingsController::PrefsDecreasePixelSize() {
     return;
   Book *book = app_.GetCurrentBook();
   if (app_.IsBookSettingsContext() && book) {
-    int value = EffectiveBookFontSize(&app_, book);
+    const int value = settings::EffectiveStyleValue(StyleValueForBook(
+        true, book, app_.reader_font_size,
+        book->GetStyleFontSizeOverride()));
     if (value > kTextPixelSizeMin) {
       book->SetStyleFontSizeOverride(value - 1);
       app_.ts->SetPixelSize((u8)(value - 1));
@@ -730,7 +733,9 @@ void SettingsController::PrefsIncreaseLineSpacing() {
     return;
   Book *book = app_.GetCurrentBook();
   if (app_.IsBookSettingsContext() && book) {
-    int value = EffectiveBookLineSpacing(&app_, book);
+    const int value = settings::EffectiveStyleValue(StyleValueForBook(
+        true, book, app_.reader_line_spacing,
+        book->GetStyleLineSpacingOverride()));
     if (value < kLineSpacingMaxPx) {
       book->SetStyleLineSpacingOverride(value + 1);
       app_.ts->linespacing = value + 1;
@@ -753,7 +758,9 @@ void SettingsController::PrefsDecreaseLineSpacing() {
     return;
   Book *book = app_.GetCurrentBook();
   if (app_.IsBookSettingsContext() && book) {
-    int value = EffectiveBookLineSpacing(&app_, book);
+    const int value = settings::EffectiveStyleValue(StyleValueForBook(
+        true, book, app_.reader_line_spacing,
+        book->GetStyleLineSpacingOverride()));
     if (value > 0) {
       book->SetStyleLineSpacingOverride(value - 1);
       app_.ts->linespacing = value - 1;
@@ -861,59 +868,26 @@ void SettingsController::PrefsRefreshButton(int index) {
     }
     break;
   case PREFS_BUTTON_FONTSIZE:
-    if (is_book_ctx && book && !book->UsesTextLayoutSettings()) {
-      app_.prefsButtons[PREFS_BUTTON_FONTSIZE].SetLabel2(std::string("(PDF fixed)"));
-    } else if (is_book_ctx && book &&
-               book->GetStyleFontSizeOverride() < 0) {
-      snprintf(msg, sizeof(msg), "                  inherit < %d >",
-               app_.reader_font_size);
-      app_.prefsButtons[PREFS_BUTTON_FONTSIZE].SetLabel2(std::string(msg));
-    } else {
-      snprintf(msg, sizeof(msg), "                        < %d >  ",
-               is_book_ctx && book ? EffectiveBookFontSize(&app_, book)
-                                   : app_.reader_font_size);
-      app_.prefsButtons[PREFS_BUTTON_FONTSIZE].SetLabel2(std::string(msg));
-    }
+    app_.prefsButtons[PREFS_BUTTON_FONTSIZE].SetLabel2(
+        settings::FontSizeValueLabel(StyleValueForBook(
+            is_book_ctx, book, app_.reader_font_size,
+            book ? book->GetStyleFontSizeOverride() : -1)));
     break;
   case PREFS_BUTTON_LINE_SPACING:
     app_.prefsButtons[PREFS_BUTTON_LINE_SPACING].SetLabel1(
         std::string("extra line spacing"));
-    if (is_book_ctx && book && !book->UsesTextLayoutSettings()) {
-      app_.prefsButtons[PREFS_BUTTON_LINE_SPACING].SetLabel2(
-          std::string("(PDF fixed)"));
-    } else if (is_book_ctx && book &&
-               book->GetStyleLineSpacingOverride() < 0) {
-      snprintf(msg, sizeof(msg), "        inherit < %d pixels >",
-               app_.reader_line_spacing);
-      app_.prefsButtons[PREFS_BUTTON_LINE_SPACING].SetLabel2(
-          std::string(msg));
-    } else {
-      snprintf(msg, sizeof(msg), "               < %d pixels >  ",
-               is_book_ctx && book ? EffectiveBookLineSpacing(&app_, book)
-                                   : app_.reader_line_spacing);
-      app_.prefsButtons[PREFS_BUTTON_LINE_SPACING].SetLabel2(
-          std::string(msg));
-    }
+    app_.prefsButtons[PREFS_BUTTON_LINE_SPACING].SetLabel2(
+        settings::LineSpacingValueLabel(StyleValueForBook(
+            is_book_ctx, book, app_.reader_line_spacing,
+            book ? book->GetStyleLineSpacingOverride() : -1)));
     break;
   case PREFS_BUTTON_PARASPACING:
     app_.prefsButtons[PREFS_BUTTON_PARASPACING].SetLabel1(
         std::string("extra paragraph spacing"));
-    if (is_book_ctx && book && !book->UsesTextLayoutSettings()) {
-      app_.prefsButtons[PREFS_BUTTON_PARASPACING].SetLabel2(
-          std::string("(PDF fixed)"));
-    } else if (is_book_ctx && book &&
-               book->GetStyleParagraphSpacingOverride() < 0) {
-      snprintf(msg, sizeof(msg), "          inherit < %d lines >",
-               app_.paraspacing);
-      app_.prefsButtons[PREFS_BUTTON_PARASPACING].SetLabel2(std::string(msg));
-    } else if (is_book_ctx && book) {
-      snprintf(msg, sizeof(msg), "                 < %d lines >  ",
-               book->GetStyleParagraphSpacingOverride());
-      app_.prefsButtons[PREFS_BUTTON_PARASPACING].SetLabel2(std::string(msg));
-    } else {
-      snprintf(msg, sizeof(msg), "                 < %d lines >  ", app_.paraspacing);
-      app_.prefsButtons[PREFS_BUTTON_PARASPACING].SetLabel2(std::string(msg));
-    }
+    app_.prefsButtons[PREFS_BUTTON_PARASPACING].SetLabel2(
+        settings::ParagraphSpacingValueLabel(StyleValueForBook(
+            is_book_ctx, book, app_.paraspacing,
+            book ? book->GetStyleParagraphSpacingOverride() : -1)));
     break;
   case PREFS_BUTTON_ORIENTATION:
     app_.prefsButtons[PREFS_BUTTON_ORIENTATION].SetLabel2(
@@ -1060,34 +1034,24 @@ void SettingsController::PrefsRefreshButton(int index) {
   case PREFS_BUTTON_PUBLISHER_TEXT_INDENT:
     app_.prefsButtons[PREFS_BUTTON_PUBLISHER_TEXT_INDENT].SetLabel1(
         std::string("publisher indent"));
-    if (is_book_ctx && book && book->UsesTextLayoutSettings() &&
-        book->GetStylePublisherTextIndentOverride() < 0) {
-      app_.prefsButtons[PREFS_BUTTON_PUBLISHER_TEXT_INDENT].SetLabel2(
-          app_.publisher_text_indent ? std::string("inherit on")
-                                     : std::string("inherit off"));
-    } else {
-      const bool enabled =
-          is_book_ctx && book ? book->GetPublisherTextIndentEnabled()
-                              : app_.publisher_text_indent;
-      app_.prefsButtons[PREFS_BUTTON_PUBLISHER_TEXT_INDENT].SetLabel2(
-          enabled ? std::string("on") : std::string("off"));
-    }
+    app_.prefsButtons[PREFS_BUTTON_PUBLISHER_TEXT_INDENT].SetLabel2(
+        settings::PublisherSettingValueLabel(
+            is_book_ctx && book, !book || book->UsesTextLayoutSettings(),
+            book ? book->GetStylePublisherTextIndentOverride() : -1,
+            app_.publisher_text_indent,
+            book ? book->GetPublisherTextIndentEnabled()
+                 : app_.publisher_text_indent));
     break;
   case PREFS_BUTTON_PUBLISHER_BLOCK_MARGINS:
     app_.prefsButtons[PREFS_BUTTON_PUBLISHER_BLOCK_MARGINS].SetLabel1(
         std::string("publisher margins"));
-    if (is_book_ctx && book && book->UsesTextLayoutSettings() &&
-        book->GetStylePublisherBlockMarginsOverride() < 0) {
-      app_.prefsButtons[PREFS_BUTTON_PUBLISHER_BLOCK_MARGINS].SetLabel2(
-          app_.publisher_block_margins ? std::string("inherit on")
-                                       : std::string("inherit off"));
-    } else {
-      const bool enabled =
-          is_book_ctx && book ? book->GetPublisherBlockMarginsEnabled()
-                              : app_.publisher_block_margins;
-      app_.prefsButtons[PREFS_BUTTON_PUBLISHER_BLOCK_MARGINS].SetLabel2(
-          enabled ? std::string("on") : std::string("off"));
-    }
+    app_.prefsButtons[PREFS_BUTTON_PUBLISHER_BLOCK_MARGINS].SetLabel2(
+        settings::PublisherSettingValueLabel(
+            is_book_ctx && book, !book || book->UsesTextLayoutSettings(),
+            book ? book->GetStylePublisherBlockMarginsOverride() : -1,
+            app_.publisher_block_margins,
+            book ? book->GetPublisherBlockMarginsEnabled()
+                 : app_.publisher_block_margins));
     break;
   }
   app_.MarkPrefsDirty();
