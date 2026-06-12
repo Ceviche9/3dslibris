@@ -38,6 +38,7 @@
 #include "parse.h"
 #include "shared/path_constants.h"
 #include "settings/prefs.h"
+#include "settings/prefs_action_utils.h"
 #include "settings/prefs_button_context_utils.h"
 #include "settings/prefs_input_utils.h"
 #include "settings/prefs_style_value_utils.h"
@@ -84,14 +85,14 @@ static void SyncLibraryButtonLayout(Button *button, bool paged, bool book_ctx) {
 static void ToggleClockFormatSetting(Prefs *prefs) {
   if (!prefs)
     return;
-  prefs->time24h = !prefs->time24h;
+  prefs->time24h = settings::ToggleSetting(prefs->time24h);
   prefs->Write();
 }
 
 static void ToggleReopenLastBookSetting(App *app) {
   if (!app)
     return;
-  app->reopen = !app->reopen;
+  app->reopen = settings::ToggleSetting(app->reopen);
   if (app->prefs)
     app->prefs->Write();
 }
@@ -100,7 +101,7 @@ static void CycleColorMode(Text *ts, App *app) {
   if (!ts)
     return;
   int mode = ts->GetColorMode();
-  int next = (mode + 1) % 6;
+  const int next = settings::NextCyclicSetting(mode, 6);
   ts->SetColorMode(next);
   UiButtonSkin_SetColorMode(next);
   if (app) {
@@ -172,36 +173,28 @@ static bool CurrentBookHasExtraPrefsPage(Book *book, bool is_book_ctx) {
 static void ToggleFixedLayoutReadingDirection(Prefs *prefs) {
   if (!prefs)
     return;
-  prefs->fixed_layout_rtl = !prefs->fixed_layout_rtl;
+  prefs->fixed_layout_rtl = settings::ToggleSetting(prefs->fixed_layout_rtl);
   prefs->Write();
 }
 
 static void ToggleCirclePadPageTurnSetting(Prefs *prefs) {
   if (!prefs)
     return;
-  prefs->circle_pad_page_turn = !prefs->circle_pad_page_turn;
+  prefs->circle_pad_page_turn =
+      settings::ToggleSetting(prefs->circle_pad_page_turn);
   prefs->Write();
 }
 
 static void CycleLibrarySortSetting(App *app) {
   if (!app || !app->prefs)
     return;
-  int next = static_cast<int>(app->prefs->library_sort_mode) + 1;
-  if (next >= LIBRARY_SORT_COUNT)
-    next = 0;
+  const int next = settings::NextCyclicSetting(
+      static_cast<int>(app->prefs->library_sort_mode), LIBRARY_SORT_COUNT);
   app->prefs->library_sort_mode = static_cast<LibrarySortMode>(next);
   app->prefs->Write();
   app->ReSortLibraryBooks();
   app->ResetBrowserMarquee();
   app->MarkBrowserDirty();
-}
-
-static int CycleBookOverride(int current) {
-  if (current < 0)
-    return 0;
-  if (current == 0)
-    return 1;
-  return -1;
 }
 
 static settings::StyleValueContext StyleValueForBook(
@@ -219,10 +212,12 @@ static void TogglePublisherTextIndentSetting(App *app, Book *book, bool is_book_
     return;
   if (is_book_ctx && book && book->UsesTextLayoutSettings()) {
     book->SetStylePublisherTextIndentOverride(
-        CycleBookOverride(book->GetStylePublisherTextIndentOverride()));
+        settings::NextTriStateOverride(
+            book->GetStylePublisherTextIndentOverride()));
     app->MarkBookLayoutDirty();
   } else {
-    app->publisher_text_indent = !app->publisher_text_indent;
+    app->publisher_text_indent =
+        settings::ToggleSetting(app->publisher_text_indent);
     app->MarkBookLayoutDirty();
   }
   if (app->prefs)
@@ -234,10 +229,12 @@ static void TogglePublisherBlockMarginsSetting(App *app, Book *book, bool is_boo
     return;
   if (is_book_ctx && book && book->UsesTextLayoutSettings()) {
     book->SetStylePublisherBlockMarginsOverride(
-        CycleBookOverride(book->GetStylePublisherBlockMarginsOverride()));
+        settings::NextTriStateOverride(
+            book->GetStylePublisherBlockMarginsOverride()));
     app->MarkBookLayoutDirty();
   } else {
-    app->publisher_block_margins = !app->publisher_block_margins;
+    app->publisher_block_margins =
+        settings::ToggleSetting(app->publisher_block_margins);
     app->MarkBookLayoutDirty();
   }
   if (app->prefs)
@@ -1220,7 +1217,8 @@ void SettingsController::PrefsHandlePress() {
   }
 
   if (selected_button == PREFS_BUTTON_TIME_REMAINING) {
-    app_.prefs->show_time_remaining = !app_.prefs->show_time_remaining;
+    app_.prefs->show_time_remaining =
+        settings::ToggleSetting(app_.prefs->show_time_remaining);
     PrefsRefreshButton(PREFS_BUTTON_TIME_REMAINING);
     app_.prefs->Write();
     app_.RequestStatusRedraw();
