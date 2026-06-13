@@ -105,6 +105,13 @@ int MainLoopController::RunMainLoop()
     }
 #endif
     hidScanInput(); // Update input state for this frame, must be called before reading keys.
+    touchPosition raw_touch = {};
+    hidTouchRead(&raw_touch);
+    const u32 frame_keys_down = hidKeysDown();
+    const u32 frame_keys_held = hidKeysHeld();
+    const FrameInput input(frame_keys_down, frame_keys_held,
+                           (frame_keys_held & KEY_TOUCH) != 0,
+                           (int)raw_touch.px, (int)raw_touch.py, osGetTime());
 #ifdef DSLIBRIS_DEBUG
     if (lifecycle_log_budget > 0)
     {
@@ -152,16 +159,16 @@ int MainLoopController::RunMainLoop()
     {
     case AppMode::Book:
       app_.UpdateStatus();
-      app_.HandleEventInBook();
+      app_.HandleEventInBook(input);
       break;
 
     case AppMode::Opening:
       app_.UpdateStatus();
-      app_.HandleEventInOpening();
+      app_.HandleEventInOpening(input);
       break;
 
     case AppMode::Browser:
-      app_.browser_handleevent();
+      app_.browser_handleevent(input);
       if (app_.GetMode() != AppMode::Browser)
       {
         DBG_LOGF(&app_, "MAIN browser frame aborted after handleevent mode=%d",
@@ -195,7 +202,7 @@ int MainLoopController::RunMainLoop()
       return 0;
 
     case AppMode::Prefs:
-      app_.PrefsHandleEvent();
+      app_.PrefsHandleEvent(input);
       if (app_.GetMode() != AppMode::Prefs)
         break;
       if (app_.IsPrefsDirty())
@@ -206,19 +213,19 @@ int MainLoopController::RunMainLoop()
     case AppMode::PrefsFontBold:
     case AppMode::PrefsFontItalic:
     case AppMode::PrefsFontBoldItalic:
-      app_.RunFontMenuFrame(hidKeysDown());
+      app_.RunFontMenuFrame(input);
       break;
 
     case AppMode::Bookmarks:
-      app_.RunBookmarksMenuFrame(hidKeysDown());
+      app_.RunBookmarksMenuFrame(input);
       break;
 
     case AppMode::Chapters:
-      app_.RunChaptersMenuFrame(hidKeysDown());
+      app_.RunChaptersMenuFrame(input);
       break;
 
     case AppMode::BookInfo:
-      app_.RunBookInfoFrame(hidKeysDown());
+      app_.RunBookInfoFrame(input);
       break;
     }
 

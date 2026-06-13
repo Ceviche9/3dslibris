@@ -232,18 +232,19 @@ void PagedListMenu::Draw() {
 #endif
 }
 
-void PagedListMenu::HandleInput(u32 keys) {
+void PagedListMenu::HandleInput(const FrameInput &input) {
+  const u32 keys = input.keys_down;
   auto key = app->key;
   const u32 release_mask = KEY_TOUCH | key.a | key.b | key.start | key.select |
                            key.dup | key.ddown | key.dleft | key.dright |
                            key.up | key.down | key.left | key.right | key.l |
                            key.r | key.zl | key.zr;
   if (wait_input_release) {
-    const u32 held = hidKeysHeld() & release_mask;
+    const u32 held = input.keys_held & release_mask;
     if (held) {
       // Some devices can report sticky held bits after view transitions.
       // Do not deadlock this menu waiting forever for a perfect release.
-      const u64 elapsed = osGetTime() - wait_input_release_started_ms;
+      const u64 elapsed = input.timestamp_ms - wait_input_release_started_ms;
 #ifdef DSLIBRIS_DEBUG
       static int s_wait_trace_budget = 32;
       if (app && s_wait_trace_budget > 0) {
@@ -275,11 +276,11 @@ void PagedListMenu::HandleInput(u32 keys) {
   const u32 list_prev_keys = key.dup | key.dleft | key.up | key.left;
 #ifdef DSLIBRIS_DEBUG
   static int s_input_trace_budget = 128;
-  if (app && s_input_trace_budget > 0 && (keys != 0 || hidKeysHeld() != 0)) {
+  if (app && s_input_trace_budget > 0 && (keys != 0 || input.keys_held != 0)) {
     DBG_LOGF(app,
              "LIST input title=%s keys=0x%08lx non_touch=0x%08lx held=0x%08lx sel=%u/%u page=%u/%u dirty=%d wait=%d",
              header_title.c_str(), (unsigned long)keys,
-             (unsigned long)non_touch_keys, (unsigned long)hidKeysHeld(),
+             (unsigned long)non_touch_keys, (unsigned long)input.keys_held,
              (unsigned)selected, (unsigned)buttons.size(),
              (unsigned)GetCurrentPage(), (unsigned)GetPageCount(),
              dirty ? 1 : 0, wait_input_release ? 1 : 0);
@@ -300,7 +301,7 @@ void PagedListMenu::HandleInput(u32 keys) {
   } else if (non_touch_keys & key.l) {
     PreviousPage();
   } else if (keys & KEY_TOUCH) {
-    HandleTouchInput();
+    HandleTouchInput(input);
   }
 }
 
@@ -485,10 +486,10 @@ void PagedListMenu::Back() {
   app->RequestStatusRedraw();
 }
 
-void PagedListMenu::HandleTouchInput() {
+void PagedListMenu::HandleTouchInput(const FrameInput &input) {
   LayoutFooterButtons();
   TouchCandidates candidates;
-  touch::BuildCandidates(app->TouchRead(), &candidates);
+  touch::BuildCandidates(app->MapTouch(input), &candidates);
   DBG_LOGF(app, "LIST touch title=%s c0=(%d,%d)", header_title.c_str(),
            candidates.points[0].x, candidates.points[0].y);
 

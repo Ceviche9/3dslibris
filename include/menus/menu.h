@@ -14,6 +14,7 @@
 /*  Abstract base for Book, Pref and Font menus. */
 #include <3ds.h>
 #include <vector>
+#include "app/frame_input.h"
 
 class Menu {
 public:
@@ -22,7 +23,7 @@ public:
   virtual void Draw() = 0; // Draw the menu on the screen
   virtual u16 GetCurrentPage() const;
   virtual u16 GetPageCount() const;
-  virtual void HandleInput(u32 keys) = 0; // Handle input events
+  virtual void HandleInput(const FrameInput &input) = 0;
   virtual void SelectItem(u16 index);
 
   class App *app; //! Pointer to the application instance.

@@ -4,6 +4,7 @@
 #include "menus/go_to_page_dialog.h"
 
 class App;
+struct FrameInput;
 
 class SettingsController {
 public:
@@ -14,9 +15,9 @@ public:
   unsigned char PrefsVisibleButtonCount() const;
   void PrefsInit();
   void PrefsDraw();
-  void PrefsHandleEvent();
+  void PrefsHandleEvent(const FrameInput &input);
   void PrefsHandlePress();
-  void PrefsHandleTouch();
+  void PrefsHandleTouch(const FrameInput &input);
   void PrefsIncreasePixelSize();
   void PrefsDecreasePixelSize();
   void PrefsIncreaseLineSpacing();

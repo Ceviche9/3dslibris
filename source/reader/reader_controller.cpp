@@ -10,9 +10,13 @@ void App::CloseBook() { reader_controller_->CloseBook(); }
 
 int App::GetBookIndex(Book *book) { return reader_controller_->GetBookIndex(book); }
 
-void App::HandleEventInBook() { reader_controller_->HandleEventInBook(); }
+void App::HandleEventInBook(const FrameInput &input) {
+  reader_controller_->HandleEventInBook(input);
+}
 
-void App::HandleEventInOpening() { reader_controller_->HandleEventInOpening(); }
+void App::HandleEventInOpening(const FrameInput &input) {
+  reader_controller_->HandleEventInOpening(input);
+}
 
 u8 App::OpenBook() { return reader_controller_->OpenBook(); }
 

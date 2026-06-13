@@ -197,12 +197,12 @@ void GoToPageDialog::Draw() {
   ts->ClearTextColorOverride();
 }
 
-void GoToPageDialog::HandleTouch(bool touch_down) {
+void GoToPageDialog::HandleTouch(const FrameInput &input, bool touch_down) {
   Book *book = app_.GetCurrentBook();
   if (!book || book->GetPageCount() <= 0 || !open_)
     return;
 
-  const touchPosition coord = app_.TouchRead();
+  const touchPosition coord = app_.MapTouch(input);
   const GoToPagePopupLayout layout = BuildLayout();
   if (PointInRect(coord.px, coord.py, layout.slider_x - 4, layout.slider_y - 8,
                   layout.slider_w + 8, layout.slider_h + 16)) {

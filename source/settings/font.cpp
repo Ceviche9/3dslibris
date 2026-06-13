@@ -292,26 +292,28 @@ void FontMenu::enterFileView() {
   dirty = true;
 }
 
-void FontMenu::handleInput(u32 keys) {
+void FontMenu::handleInput(const FrameInput &input) {
 #ifdef DSLIBRIS_DEBUG
+  const u32 keys = input.keys_down;
   static int s_font_input_budget = 96;
   if (app && s_font_input_budget > 0 &&
-      (keys != 0 || hidKeysHeld() != 0)) {
+      (keys != 0 || input.keys_held != 0)) {
     DBG_LOGF(app,
              "FONT input keys=0x%08lx held=0x%08lx view=%d target=%u sel=%u page=%u dirty=%d",
-             (unsigned long)keys, (unsigned long)hidKeysHeld(),
+             (unsigned long)keys, (unsigned long)input.keys_held,
              (int)viewState, (unsigned)targetSelected, (unsigned)selected,
              (unsigned)page, dirty ? 1 : 0);
     s_font_input_budget--;
   }
 #endif
   if (viewState == VIEW_TARGETS)
-    handleTargetInput(keys);
+    handleTargetInput(input);
   else
-    handleFileInput(keys);
+    handleFileInput(input);
 }
 
-void FontMenu::handleTargetInput(u32 keys) {
+void FontMenu::handleTargetInput(const FrameInput &input) {
+  const u32 keys = input.keys_down;
   auto key = app->key;
   const u32 list_next_keys = key.ddown | key.dright | key.down | key.right;
   const u32 list_prev_keys = key.dup | key.dleft | key.up | key.left;
@@ -328,11 +330,12 @@ void FontMenu::handleTargetInput(u32 keys) {
   } else if (keys & list_prev_keys) {
     selectPreviousTarget();
   } else if (keys & KEY_TOUCH) {
-    handleTargetTouchInput();
+    handleTargetTouchInput(input);
   }
 }
 
-void FontMenu::handleFileInput(u32 keys) {
+void FontMenu::handleFileInput(const FrameInput &input) {
+  const u32 keys = input.keys_down;
   auto key = app->key;
   const u32 list_next_keys = key.ddown | key.dright | key.down | key.right;
   const u32 list_prev_keys = key.dup | key.dleft | key.up | key.left;
@@ -349,14 +352,14 @@ void FontMenu::handleFileInput(u32 keys) {
   } else if (keys & key.l) {
     previousPage();
   } else if (keys & KEY_TOUCH) {
-    handleFileTouchInput();
+    handleFileTouchInput(input);
   }
 }
 
-void FontMenu::handleTargetTouchInput() {
+void FontMenu::handleTargetTouchInput(const FrameInput &input) {
   LayoutTargetFooterButtons(buttonprefs);
   TouchCandidates candidates;
-  touch::BuildCandidates(app->TouchRead(), &candidates);
+  touch::BuildCandidates(app->MapTouch(input), &candidates);
 
   if (targetPage + 1 < getTargetPageCount() &&
       touch::HitsButton(candidates, buttonnext, 4)) {
@@ -405,10 +408,10 @@ void FontMenu::handleTargetTouchInput() {
   }
 }
 
-void FontMenu::handleFileTouchInput() {
+void FontMenu::handleFileTouchInput(const FrameInput &input) {
   LayoutFileFooterButtons(buttonprev, buttonnext, buttonprefs);
   TouchCandidates candidates;
-  touch::BuildCandidates(app->TouchRead(), &candidates);
+  touch::BuildCandidates(app->MapTouch(input), &candidates);
 
   int footerX = -1;
   touch::FirstXInBottomBand(candidates, 284, &footerX);

@@ -28,9 +28,9 @@ public:
     void Open(AppMode requested_mode);
     void draw();
     void Draw() override { draw(); } // Override to use the draw method
-    void HandleInput(u32 keys) override { handleInput(keys); }
+    void HandleInput(const FrameInput &input) override { handleInput(input); }
     inline const std::vector<std::string>& getFiles() const { return files; }
-    void handleInput(u32 keys);
+    void handleInput(const FrameInput &input);
     inline bool isDirty() const { return dirty; }
     inline void setDirty(bool d = true) { dirty = d; }
 private:
@@ -43,12 +43,12 @@ private:
     void refreshTargetButtons();
     void enterTargetView(u8 requested_target);
     void enterFileView();
-    void handleTargetInput(u32 keys);
-    void handleFileInput(u32 keys);
-    void handleTargetTouchInput();
+    void handleTargetInput(const FrameInput &input);
+    void handleFileInput(const FrameInput &input);
+    void handleTargetTouchInput(const FrameInput &input);
     void handleButtonPress();
     void LayoutFileButtons();
-    void handleFileTouchInput();
+    void handleFileTouchInput(const FrameInput &input);
     void nextTargetPage();
     void previousTargetPage();
     u8 getTargetPageCount() const;

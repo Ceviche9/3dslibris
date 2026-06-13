@@ -129,14 +129,14 @@ void LibraryController::ResetBrowserMarquee() { g_marquee.Reset(); }
 // EnqueueJob, QueueBookWarmup, TickBrowserWarmup, QueueTocResolve, ProcessJobs,
 // PauseBrowserJobs) moved to app_browser_jobs.cpp.
 
-void LibraryController::browser_handleevent() {
+void LibraryController::browser_handleevent(const FrameInput &input) {
   if (app_.ShouldAbortWork())
     return;
 
   // Re-apply browser layout in case another view reused/moved shared buttons.
   LayoutBrowserNavButtons(&app_);
 
-  u32 keys = hidKeysDown();
+  const u32 keys = input.keys_down;
 #ifdef DSLIBRIS_DEBUG
   if (keys) {
     DBG_LOGF(&app_, "BROWSER handleevent keys=0x%08lx",
@@ -199,8 +199,8 @@ void LibraryController::browser_handleevent() {
                            app_.key.left | app_.key.right | app_.key.l |
                            app_.key.r | app_.key.zl | app_.key.zr;
   if (app_.IsBrowserWaitingInputRelease()) {
-    const u64 now = osGetTime();
-    if (hidKeysHeld() & release_mask &&
+    const u64 now = input.timestamp_ms;
+    if (input.keys_held & release_mask &&
         !browser_warmup_utils::ShouldForceClearInputRelease(
             now, app_.GetBrowserLastInteractionMs(), true))
       return;
@@ -375,7 +375,7 @@ void LibraryController::browser_handleevent() {
       return false;
     };
 
-    touchPosition mapped = app_.TouchRead();
+    touchPosition mapped = app_.MapTouch(input);
     handleTouchAt((int)mapped.px, (int)mapped.py);
   }
 }

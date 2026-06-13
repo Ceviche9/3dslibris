@@ -205,11 +205,13 @@ static bool TryFollowTouchLink(Book *book, Text *ts, int tx, int ty) {
 namespace reflow_input {
 
 bool HandleInBook(App &app, Book *book, Text *ts, Prefs * /*prefs*/,
-                  uint32_t keys, uint32_t held, uint16_t *pagecurrent,
+                  const FrameInput &input, uint16_t *pagecurrent,
                   uint16_t *pagecount, const ReaderControls &ctrl) {
+  const uint32_t keys = input.keys_down;
+  const uint32_t held = input.keys_held;
   bool status_dirty = false;
   const bool has_inline_links = CurrentPageHasInlineLinks(book);
-  const uint64_t now_ms = osGetTime();
+  const uint64_t now_ms = input.timestamp_ms;
 
   if (!app.IsInlineLinkFocusActive() && (keys & app.key.y)) {
     app.SetInlineLinkHoldArmed(true);
@@ -304,7 +306,7 @@ bool HandleInBook(App &app, Book *book, Text *ts, Prefs * /*prefs*/,
       // y without hold: consumed by hold-arm; no-op here
     } else if (keys & KEY_TOUCH) {
       app.ResetPageRepeat();
-      touchPosition mapped = app.TouchRead();
+      touchPosition mapped = app.MapTouch(input);
       if (TryFollowTouchLink(book, ts, (int)mapped.px, (int)mapped.py)) {
         status_dirty = true;
       } else {

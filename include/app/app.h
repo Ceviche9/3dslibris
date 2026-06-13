@@ -70,6 +70,7 @@ https://github.com/rhaleblian/dslibris
 #include "ui/text.h"
 #include "shared/status_reporter.h"
 #include "app/app_lifecycle_state.h"
+#include "app/frame_input.h"
 
 class Book;
 class Prefs;
@@ -160,7 +161,7 @@ public:
   void PrintStatus(const char *msg) override;
   void PrintStatus(std::string msg) override;
   int Run(void);
-  touchPosition TouchRead();
+  touchPosition MapTouch(const FrameInput &input) const;
   void UpdateStatus();
   void RequestStatusRedraw();
   void parse_error(XML_ParserStruct *ps);
@@ -193,18 +194,18 @@ public:
   void ClearSkipNextBrowserPresent();
   void ProcessJobs(u32 budget_ms);
   void browser_draw();
-  void browser_handleevent();
+  void browser_handleevent(const FrameInput &input);
   void browser_init();
   void TickBrowserWarmup();
   void browser_tick_marquee();
   void ResetBrowserMarquee();
   void PrefsDraw();
-  void PrefsHandleEvent();
+  void PrefsHandleEvent(const FrameInput &input);
   void PersistPrefs();
-  void RunFontMenuFrame(u32 keys);
-  void RunBookmarksMenuFrame(u32 keys);
-  void RunChaptersMenuFrame(u32 keys);
-  void RunBookInfoFrame(u32 keys);
+  void RunFontMenuFrame(const FrameInput &input);
+  void RunBookmarksMenuFrame(const FrameInput &input);
+  void RunChaptersMenuFrame(const FrameInput &input);
+  void RunBookInfoFrame(const FrameInput &input);
   bool PresentIfDirty();
   int StartupFindBooks();
   void StartupPrepareLibrary();
@@ -217,8 +218,8 @@ public:
   // app_book.cpp
   void CloseBook();
   int GetBookIndex(Book *);
-  void HandleEventInBook();
-  void HandleEventInOpening();
+  void HandleEventInBook(const FrameInput &input);
+  void HandleEventInOpening(const FrameInput &input);
   u8 OpenBook();
   void ToggleBookmark();
   void MarkBookLayoutDirty();
@@ -444,7 +445,7 @@ private:
 
   // app_prefs.cpp
   void PrefsHandlePress();
-  void PrefsHandleTouch();
+  void PrefsHandleTouch(const FrameInput &input);
   void PrefsInit();
   void PrefsIncreasePixelSize();
   void PrefsDecreasePixelSize();

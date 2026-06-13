@@ -603,8 +603,9 @@ BuildNormalizedDescriptionRenderLines(Text *ts, const std::string &raw,
 
 } // namespace
 
-void App::RunFontMenuFrame(u32 keys)
+void App::RunFontMenuFrame(const FrameInput &input)
 {
+  const u32 keys = input.keys_down;
 #ifdef DSLIBRIS_DEBUG
   static int s_font_frame_budget = 48;
   if (s_font_frame_budget > 0)
@@ -640,7 +641,7 @@ void App::RunFontMenuFrame(u32 keys)
   if (keys == 0)
     return;
 
-  fontmenu->HandleInput(keys);
+  fontmenu->HandleInput(input);
   if (fontmenu->isDirty())
   {
     ts->SetScreen(ts->screenright);
@@ -658,15 +659,16 @@ void App::RunFontMenuFrame(u32 keys)
   }
 }
 
-void App::RunBookmarksMenuFrame(u32 keys)
+void App::RunBookmarksMenuFrame(const FrameInput &input)
 {
-  bookmarkmenu->HandleInput(keys);
+  bookmarkmenu->HandleInput(input);
   if (bookmarkmenu->IsDirty())
     bookmarkmenu->Draw();
 }
 
-void App::RunChaptersMenuFrame(u32 keys)
+void App::RunChaptersMenuFrame(const FrameInput &input)
 {
+  const u32 keys = input.keys_down;
 #ifdef DSLIBRIS_DEBUG
   static int s_chapters_frame_budget = 24;
   if (s_chapters_frame_budget > 0)
@@ -676,10 +678,10 @@ void App::RunChaptersMenuFrame(u32 keys)
     s_chapters_frame_budget--;
   }
   static int s_chapters_input_budget = 64;
-  if (s_chapters_input_budget > 0 && (keys != 0 || hidKeysHeld() != 0))
+  if (s_chapters_input_budget > 0 && (keys != 0 || input.keys_held != 0))
   {
     DBG_LOGF(this, "INDEX input down=0x%08lx held=0x%08lx",
-             (unsigned long)keys, (unsigned long)hidKeysHeld());
+             (unsigned long)keys, (unsigned long)input.keys_held);
     s_chapters_input_budget--;
   }
 #endif
@@ -704,7 +706,7 @@ void App::RunChaptersMenuFrame(u32 keys)
   if (keys == 0)
     return;
 
-  chaptermenu->HandleInput(keys);
+  chaptermenu->HandleInput(input);
   const bool dirty_after_input = chaptermenu && chaptermenu->IsDirty();
 #ifdef DSLIBRIS_DEBUG
   {
@@ -730,8 +732,9 @@ void App::RunChaptersMenuFrame(u32 keys)
 #endif
 }
 
-void App::RunBookInfoFrame(u32 keys)
+void App::RunBookInfoFrame(const FrameInput &input)
 {
+  const u32 keys = input.keys_down;
   if (keys & (KEY_B | KEY_SELECT | KEY_START | KEY_Y | KEY_A)) {
     ShowSettingsView(true);
     return;
@@ -782,7 +785,7 @@ void App::RunBookInfoFrame(u32 keys)
   }
 
   if (keys & KEY_TOUCH) {
-    touchPosition touch = TouchRead();
+    touchPosition touch = MapTouch(input);
     const int x = (int)touch.px;
     const int y = (int)touch.py;
     if (buttonback.EnclosesPoint((u16)x, (u16)y)) {

@@ -63,9 +63,11 @@ static void MapViewportPanToReadingOrientation(bool turned_right,
 
 namespace fixed_layout_input {
 
-bool HandleInBook(App &app, Book *book, Text *ts, uint32_t keys, uint32_t held,
+bool HandleInBook(App &app, Book *book, Text *ts, const FrameInput &input,
                   uint16_t *pagecurrent, uint16_t pagecount,
                   const ReaderControls &ctrl) {
+  const uint32_t keys = input.keys_down;
+  const uint32_t held = input.keys_held;
   bool status_dirty = false;
 
   const auto delay_deferred = [&]() {
@@ -132,7 +134,7 @@ bool HandleInBook(App &app, Book *book, Text *ts, uint32_t keys, uint32_t held,
       delay_deferred();
     }
   } else if (keys & KEY_TOUCH) {
-    touchPosition mapped = app.TouchRead();
+    touchPosition mapped = app.MapTouch(input);
     app.SetPdfTouchDragActive(true);
     book_renderer::SetFixedLayoutViewportInteraction(book, true);
     app.SetPdfTouchLastX((int)mapped.px);
@@ -144,7 +146,7 @@ bool HandleInBook(App &app, Book *book, Text *ts, uint32_t keys, uint32_t held,
       delay_deferred();
     }
   } else if (held & KEY_TOUCH) {
-    touchPosition mapped = app.TouchRead();
+    touchPosition mapped = app.MapTouch(input);
     if (!app.IsPdfTouchDragActive() ||
         pdf_view_utils::TouchMovementExceedsThreshold(
             app.GetPdfTouchLastX(), app.GetPdfTouchLastY(), (int)mapped.px,

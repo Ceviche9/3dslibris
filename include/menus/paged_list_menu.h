@@ -23,7 +23,7 @@ public:
 
   void Init();
   void Draw() override;
-  void HandleInput(u32 keys) override;
+  void HandleInput(const FrameInput &input) override;
   u16 GetCurrentPage() const override;
   u16 GetPageCount() const override;
   void SelectItem(u16 index) override;
@@ -57,7 +57,7 @@ private:
   void PreviousPage();
   void SelectNext();
   void SelectPrevious();
-  void HandleTouchInput();
+  void HandleTouchInput(const FrameInput &input);
   void LayoutFooterButtons();
 
   std::string header_title;

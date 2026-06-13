@@ -471,9 +471,9 @@ void SettingsController::PrefsDraw() {
   app_.SetPrefsDirty(false);
 }
 
-void SettingsController::PrefsHandleEvent() {
-  u32 keys = hidKeysDown();
-  u32 held = hidKeysHeld();
+void SettingsController::PrefsHandleEvent(const FrameInput &input) {
+  const u32 keys = input.keys_down;
+  const u32 held = input.keys_held;
 #ifdef DSLIBRIS_DEBUG
   static int s_prefs_keys_budget = 48;
   if (s_prefs_keys_budget > 0 && keys) {
@@ -512,7 +512,7 @@ void SettingsController::PrefsHandleEvent() {
       go_to_page_dialog_.AdjustTarget((int)kGoToPageCoarseStep);
     }
     if ((keys & KEY_TOUCH) || (held & KEY_TOUCH))
-      go_to_page_dialog_.HandleTouch((keys & KEY_TOUCH) != 0);
+      go_to_page_dialog_.HandleTouch(input, (keys & KEY_TOUCH) != 0);
     if (prefs_input_utils::ShouldRedrawPrefsAfterOverlayInput(
             app_.IsPrefsDirty(), app_.GetMode() == AppMode::Prefs))
       PrefsDraw();
@@ -565,13 +565,13 @@ void SettingsController::PrefsHandleEvent() {
              (keys & app_.key.down)) {
     PrefsIncreaseParaspacing();
   } else if (keys & KEY_TOUCH) {
-    PrefsHandleTouch();
+    PrefsHandleTouch(input);
   }
 }
 
-void SettingsController::PrefsHandleTouch() {
+void SettingsController::PrefsHandleTouch(const FrameInput &input) {
   const AppMode mode_before_touch = app_.GetMode();
-  touchPosition coord = app_.TouchRead();
+  touchPosition coord = app_.MapTouch(input);
   const int footerX = (int)coord.px;
   const int footerY = (int)coord.py;
 
@@ -1313,9 +1313,13 @@ void App::PrefsInit() { settings_controller_->PrefsInit(); }
 
 void App::PrefsDraw() { settings_controller_->PrefsDraw(); }
 
-void App::PrefsHandleEvent() { settings_controller_->PrefsHandleEvent(); }
+void App::PrefsHandleEvent(const FrameInput &input) {
+  settings_controller_->PrefsHandleEvent(input);
+}
 
-void App::PrefsHandleTouch() { settings_controller_->PrefsHandleTouch(); }
+void App::PrefsHandleTouch(const FrameInput &input) {
+  settings_controller_->PrefsHandleTouch(input);
+}
 
 void App::PrefsIncreasePixelSize() { settings_controller_->PrefsIncreasePixelSize(); }
 

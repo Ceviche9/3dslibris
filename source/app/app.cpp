@@ -311,14 +311,9 @@ int App::Run(void)
 // 3DS touch input — map physical touch to our logical buffer coordinates.
 // The transform must be the inverse of Text::BlitToFramebuffer() for the
 // currently active orientation.
-touchPosition App::TouchRead()
+touchPosition App::MapTouch(const FrameInput &input) const
 {
-  touchPosition raw;
-  hidTouchRead(&raw); // Get raw touch coordinates from the 3DS hardware.
-
-  const touch_map_utils::TouchPoint point =
-      touch_map_utils::MapRawTouch(render_orientation, (int)raw.px,
-                                   (int)raw.py);
+  const touch_map_utils::TouchPoint point = input.MapTouch(render_orientation);
   touchPosition mapped;
   mapped.px = (u16)point.x;
   mapped.py = (u16)point.y;
@@ -329,7 +324,8 @@ touchPosition App::TouchRead()
     char dmsg[160];
     snprintf(dmsg, sizeof(dmsg),
              "ORIENT touch raw=(%u,%u) mapped=(%u,%u) turned_right=%d",
-             (unsigned)raw.px, (unsigned)raw.py, (unsigned)mapped.px,
+             (unsigned)input.touch_raw_x, (unsigned)input.touch_raw_y,
+             (unsigned)mapped.px,
              (unsigned)mapped.py, orientation ? 1 : 0);
     DBG_LOG(this, dmsg);
     g_orientation_touch_diag_budget--;

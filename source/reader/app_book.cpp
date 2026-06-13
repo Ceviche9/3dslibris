@@ -276,14 +276,14 @@ bool ReaderController::MaybeFinalizeDeferredRelayout(Book *book, int page_count)
   return true;
 }
 
-void ReaderController::HandleEventInOpening()
+void ReaderController::HandleEventInOpening(const FrameInput &input)
 {
   Prefs *prefs = app_.prefs.get();
   Text *ts = app_.ts.get();
   if (app_.ShouldAbortWork())
     return;
   MaybeDrawOpeningSplashProgress(&app_);
-  const u32 keys = hidKeysDown();
+  const u32 keys = input.keys_down;
 
   if (keys & (app_.key.b | app_.key.start | app_.key.select))
   {
@@ -472,7 +472,7 @@ void ReaderController::HandleEventInOpening()
   boot_trace::Boot("async open done");
 }
 
-void ReaderController::HandleEventInBook()
+void ReaderController::HandleEventInBook(const FrameInput &input)
 {
   Book *bookcurrent_ = app_.GetCurrentBook();
   Text *ts = app_.ts.get();
@@ -483,14 +483,12 @@ void ReaderController::HandleEventInBook()
       orientation_utils::IsLandscape(bookcurrent_->GetOrientation())
           ? BuildLandscapeControls(app_.key)
           : BuildPortraitControls(app_.key);
-  const u32 keys = hidKeysDown();
-  const u32 held = hidKeysHeld();
   const u16 position_before = bookcurrent_->GetPosition();
   u16 pagecurrent = bookcurrent_->GetPosition();
   u16 pagecount = bookcurrent_->GetPageCount();
 
   if (bookcurrent_->IsFixedLayout()) {
-    if (fixed_layout_input::HandleInBook(app_, bookcurrent_, ts, keys, held,
+    if (fixed_layout_input::HandleInBook(app_, bookcurrent_, ts, input,
                                          &pagecurrent, pagecount, ctrl))
       app_.RequestStatusRedraw();
     if (bookcurrent_->GetPosition() != position_before) {
@@ -507,7 +505,7 @@ void ReaderController::HandleEventInBook()
   }
 
   bool status_dirty = reflow_input::HandleInBook(
-      app_, bookcurrent_, ts, app_.prefs.get(), keys, held,
+      app_, bookcurrent_, ts, app_.prefs.get(), input,
       &pagecurrent, &pagecount, ctrl);
   if (MaybeFinalizeDeferredRelayout(bookcurrent_, (int)pagecount)) {
     book_nav::DrawPage(bookcurrent_, ts);

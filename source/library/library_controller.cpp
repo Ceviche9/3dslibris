@@ -875,7 +875,9 @@ bool LibraryController::IsInsideFolder() const { return inside_folder_; }
 
 void App::browser_draw() { library_controller_->browser_draw(); }
 
-void App::browser_handleevent() { library_controller_->browser_handleevent(); }
+void App::browser_handleevent(const FrameInput &input) {
+  library_controller_->browser_handleevent(input);
+}
 
 void App::browser_init() { library_controller_->browser_init(); }
 
