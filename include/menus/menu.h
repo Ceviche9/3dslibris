@@ -15,10 +15,12 @@
 #include <3ds.h>
 #include <vector>
 #include "app/frame_input.h"
+#include "menus/menu_context.h"
 
 class Menu {
 public:
   Menu(class App *app);
+  explicit Menu(const MenuContext &context);
   virtual ~Menu();
   virtual void Draw() = 0; // Draw the menu on the screen
   virtual u16 GetCurrentPage() const;

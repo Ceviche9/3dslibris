@@ -11,15 +11,14 @@
 */
 
 #include "menus/menu.h"
-#include "app/app.h"
 
-Menu::Menu(App *_app) {
-    app = _app ? _app : App::GetInstance();
-    ts = app ? app->ts.get() : nullptr;
-    buttonprev = app ? &app->buttonprev : nullptr;
-    buttonnext = app ? &app->buttonnext : nullptr;
-    buttonprefs = app ? &app->buttonprefs : nullptr;
-    color_mode = app ? &app->colorMode : nullptr;
+Menu::Menu(const MenuContext &context) {
+    app = context.app;
+    ts = context.text;
+    buttonprev = context.previous_button;
+    buttonnext = context.next_button;
+    buttonprefs = context.preferences_button;
+    color_mode = context.color_mode;
     buttons.clear();
     pagesize = 7;
     selected = 0;
