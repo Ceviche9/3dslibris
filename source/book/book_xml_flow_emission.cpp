@@ -546,11 +546,32 @@ void EmitFlowedFragmentRaw(parsedata_t *p, const char *txt, int txtlen,
     if (ti.unit == MarginTopResult::Unit::None)
       ti = epub_css_class_map::LookupTextIndentForClassAttr(
           p->last_p_class, p->css_class_map);
-    // CSS text-indent is inherited — fall back to the parent div's class if
-    // neither the inline style nor the <p> class defines one.
+    if (ti.unit == MarginTopResult::Unit::None) {
+      epub_css_class_map::CssClassMargins tag_css;
+      if (epub_css_class_map::LookupAllForTag("p", p->css_class_map,
+                                               &tag_css))
+        ti = tag_css.text_indent;
+    }
+    // CSS text-indent is inherited. Resolve the paragraph itself first, then
+    // its active div and body ancestors.
+    if (ti.unit == MarginTopResult::Unit::None)
+      ti = book_xml_css_style_utils::ParseTextIndent(
+          p->last_div_style.c_str());
     if (ti.unit == MarginTopResult::Unit::None && !p->last_div_class.empty())
       ti = epub_css_class_map::LookupTextIndentForClassAttr(
           p->last_div_class, p->css_class_map);
+    if (ti.unit == MarginTopResult::Unit::None)
+      ti = book_xml_css_style_utils::ParseTextIndent(
+          p->last_body_style.c_str());
+    if (ti.unit == MarginTopResult::Unit::None && !p->last_body_class.empty())
+      ti = epub_css_class_map::LookupTextIndentForClassAttr(
+          p->last_body_class, p->css_class_map);
+    if (ti.unit == MarginTopResult::Unit::None) {
+      epub_css_class_map::CssClassMargins tag_css;
+      if (epub_css_class_map::LookupAllForTag("body", p->css_class_map,
+                                               &tag_css))
+        ti = tag_css.text_indent;
+    }
 // TEXTINDENT_TRACE: per-paragraph TextIndent diagnostics. Off by default;
 // fires once per paragraph (thousands per large EPUB), enough to slow parse
 // noticeably via fflush. Flip to 1 only when debugging text-indent rules.

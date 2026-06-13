@@ -143,6 +143,7 @@ void parse_init(parsedata_t *data) {
   data->in_paragraph = false;
   data->paragraph_has_content = false;
   data->paragraph_has_standalone_band_image = false;
+  data->paragraph_has_decorative_band_image = false;
   data->last_block_was_standalone_band_image = false;
   data->text_transform_word_start = true;
   data->base_font_size_px = 0;
@@ -233,11 +234,13 @@ void parse_init(parsedata_t *data) {
   data->last_h2_style.clear();
   data->last_h_style.clear();
   data->last_hr_style.clear();
+  data->last_body_style.clear();
   data->last_p_class.clear();
   data->last_h1_class.clear();
   data->last_h2_class.clear();
   data->last_h_class.clear();
   data->last_hr_class.clear();
+  data->last_body_class.clear();
   data->collecting_fb2_binary = false;
   data->fb2_binary_too_large = false;
   data->fb2_binary_id.clear();

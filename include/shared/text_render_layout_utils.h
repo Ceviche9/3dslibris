@@ -7,7 +7,6 @@
 namespace text_render_layout_utils {
 
 static const int kFullReadingScreenFooterGuardPx = 8;
-static const int kCompactScreenBaselineBleedPx = 2;
 // Landscape reading reserves a slim HUD strip at the bottom of the second
 // (bottom) screen for clock/progress.
 static const int kLandscapeHudStripPx = 22;
@@ -56,10 +55,9 @@ inline ReadingScreenMetrics ResolveReadingScreenMetrics(
 
   ReadingScreenMetrics metrics{};
   metrics.max_height = current_screen_is_left ? 400 : 320;
-  metrics.bottom_margin = current_screen_is_left
-                              ? (left_bottom_margin +
-                                 kFullReadingScreenFooterGuardPx)
-                              : right_bottom_margin;
+  metrics.bottom_margin =
+      (current_screen_is_left ? left_bottom_margin : right_bottom_margin) +
+      kFullReadingScreenFooterGuardPx;
   return metrics;
 }
 
@@ -139,22 +137,12 @@ inline bool CurrentLineFitsScreen(int pen_y, int line_height,
                                   int bottom_margin) {
   (void)line_height;
   (void)line_spacing;
-  const int visual_bottom_margin =
-      (bottom_margin > 36)
-          ? std::max(0, bottom_margin - kFullReadingScreenFooterGuardPx)
-          : (bottom_margin <= 16)
-          ? std::max(0, bottom_margin - kCompactScreenBaselineBleedPx)
-          : bottom_margin;
-  return pen_y <= (max_height - visual_bottom_margin);
+  return pen_y <= (max_height - bottom_margin);
 }
 
 inline bool CurrentLineBeyondReadingScreen(int pen_y, int max_height,
                                            int bottom_margin) {
-  const int visual_bottom_margin =
-      (bottom_margin > 36)
-          ? std::max(0, bottom_margin - kFullReadingScreenFooterGuardPx)
-          : bottom_margin;
-  return pen_y > (max_height - visual_bottom_margin);
+  return pen_y > (max_height - bottom_margin);
 }
 
 inline bool ShouldAdvanceAfterBandImage(int pen_y, int max_height,

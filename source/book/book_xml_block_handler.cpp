@@ -241,6 +241,8 @@ bool HandleBlockElementStart(
     }
   } else if (!strcmp(el, "body")) {
     parse_push(p, TAG_BODY);
+    p->last_body_style = book_xml_css_resolver::ExtractStyleAttr(attr);
+    p->last_body_class = book_xml_css_resolver::ExtractClassAttr(attr);
   } else if (!strcmp(el, "div")) {
     parse_push(p, TAG_DIV);
     p->last_div_style = book_xml_css_resolver::ExtractStyleAttr(attr);
@@ -367,6 +369,7 @@ bool HandleBlockElementStart(
     p->in_paragraph = true;
     p->paragraph_has_content = false;
     p->paragraph_has_standalone_band_image = false;
+    p->paragraph_has_decorative_band_image = false;
     p->text_transform_word_start = true;
     p->last_p_style = book_xml_css_resolver::ExtractStyleAttr(attr);
     p->last_p_class = book_xml_css_resolver::ExtractClassAttr(attr);
@@ -663,12 +666,23 @@ bool HandleBlockElementEnd(parsedata_t *p, Text *ts, const char *el) {
         p->pen.y, p->linebegan ? 1 : 0, p->screen);
 #endif
     }
+    if (!p->paragraph_has_content && p->paragraph_has_standalone_band_image &&
+        !p->paragraph_has_decorative_band_image &&
+        p->book->GetPublisherBlockMarginsEnabled()) {
+      const int line_h = ts->GetHeight() + ts->linespacing;
+      const book_xml_css_style_utils::MarginTopResult mbr =
+          ParsePublisherElementMarginBottom(
+              p, p->last_p_style, p->last_p_class, p->css_class_map, "p");
+      book_xml_screen_advance::QueueBlockSpacingFromMarginResult(
+          p, "p", "image-paragraph-bottom", mbr, line_h, 0);
+    }
     RestoreActiveBlockTextAlignMarker(p);
     p->last_block_was_standalone_band_image =
         !p->paragraph_has_content && p->paragraph_has_standalone_band_image;
     p->in_paragraph = false;
     p->paragraph_has_content = false;
     p->paragraph_has_standalone_band_image = false;
+    p->paragraph_has_decorative_band_image = false;
     p->block_margin_left = 0;
     p->block_margin_right = 0;
   } else if (!strcmp(el, "div")) {
