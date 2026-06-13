@@ -110,6 +110,7 @@ fi
   "$TEST_ROOT/source/shared/app_flow_utils.cpp" \
   "$TEST_ROOT/source/shared/utf8_utils.cpp" \
   "$TEST_ROOT/source/shared/cover_decode_utils.cpp" \
+  "$TEST_ROOT/source/shared/image_scale_utils.cpp" \
   "${THIRD_PARTY_OBJS[@]}" \
   "${EXPAT_OBJS[@]}" \
   ${LDFLAGS:-} \
