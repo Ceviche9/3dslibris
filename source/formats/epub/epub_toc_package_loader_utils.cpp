@@ -185,7 +185,6 @@ bool LoadTocEntriesFromPackage(unzFile uf, epub_data_t &parsedata,
                                IStatusReporter *reporter) {
   if (!uf || !toc_entries)
     return false;
-  IStatusReporter *app = reporter;
 
   toc_entries->clear();
   std::string toc_xml;
@@ -246,44 +245,44 @@ bool LoadTocEntriesFromPackage(unzFile uf, epub_data_t &parsedata,
   if (!parsedata.navid.empty() &&
       FindManifestItemPath(parsedata, parsedata.navid, opf_folder,
                            toc_doc_path)) {
-    if (app) {
+    if (reporter) {
       char msg[192];
       snprintf(msg, sizeof(msg), "EPUB: try NAV %s", toc_doc_path.c_str());
-      DBG_LOG(app, msg);
+      DBG_LOG(reporter, msg);
     }
-    if (ReadZipEntryText(uf, toc_doc_path, toc_xml, app, "NAV")) {
+    if (ReadZipEntryText(uf, toc_doc_path, toc_xml, reporter, "NAV")) {
       std::vector<toc_entry_t> nav_entries;
       bool parsed_nav =
           epub_ncx_parser::ParseNavWithExpat(toc_xml, toc_doc_path, &nav_entries);
-      if (parsed_nav && app)
-        LogTocEntrySamples(app, "NAV parsed", nav_entries, 4);
+      if (parsed_nav && reporter)
+        LogTocEntrySamples(reporter, "NAV parsed", nav_entries, 4);
       if (parsed_nav && looks_reasonable_toc(nav_entries)) {
         ReorderNavEntriesBySpine(parsedata, opf_folder, &nav_entries);
         *toc_entries = nav_entries;
         toc_loaded = true;
-        if (app)
-          LogTocEntrySamples(app, "NAV selected", *toc_entries, 4);
-      } else if (app) {
-        DBG_LOG(app, "EPUB: NAV discarded (low-quality TOC)");
+        if (reporter)
+          LogTocEntrySamples(reporter, "NAV selected", *toc_entries, 4);
+      } else if (reporter) {
+        DBG_LOG(reporter, "EPUB: NAV discarded (low-quality TOC)");
       }
-    } else if (app) {
-      DBG_LOG(app, "EPUB: NAV skipped (size/format)");
+    } else if (reporter) {
+      DBG_LOG(reporter, "EPUB: NAV skipped (size/format)");
     }
   }
 
   if (!toc_loaded && !parsedata.tocid.empty() &&
       FindManifestItemPath(parsedata, parsedata.tocid, opf_folder,
                            toc_doc_path)) {
-    if (app) {
+    if (reporter) {
       char msg[192];
       snprintf(msg, sizeof(msg), "EPUB: try NCX %s", toc_doc_path.c_str());
-      DBG_LOG(app, msg);
+      DBG_LOG(reporter, msg);
     }
-    if (app)
-      DBG_LOG(app, "EPUB: NCX read call begin");
-    bool ncx_read_ok = ReadZipEntryText(uf, toc_doc_path, toc_xml, app, "NCX");
-    if (app) {
-      DBG_LOG(app, ncx_read_ok ? "EPUB: NCX read call ok"
+    if (reporter)
+      DBG_LOG(reporter, "EPUB: NCX read call begin");
+    bool ncx_read_ok = ReadZipEntryText(uf, toc_doc_path, toc_xml, reporter, "NCX");
+    if (reporter) {
+      DBG_LOG(reporter, ncx_read_ok ? "EPUB: NCX read call ok"
                                : "EPUB: NCX read call fail");
     }
     if (ncx_read_ok) {
@@ -293,18 +292,18 @@ bool LoadTocEntriesFromPackage(unzFile uf, epub_data_t &parsedata,
       if (!parsed)
         parsed = epub_ncx_parser::ParseNcxLightweight(toc_xml, toc_doc_path,
                                                       &ncx_entries);
-      if (parsed && app)
-        LogTocEntrySamples(app, "NCX parsed", ncx_entries, 4);
+      if (parsed && reporter)
+        LogTocEntrySamples(reporter, "NCX parsed", ncx_entries, 4);
       if (parsed && looks_reasonable_toc(ncx_entries)) {
         *toc_entries = ncx_entries;
         toc_loaded = true;
-        if (app)
-          LogTocEntrySamples(app, "NCX selected", *toc_entries, 4);
-      } else if (app) {
-        DBG_LOG(app, "EPUB: NCX discarded (low-quality TOC)");
+        if (reporter)
+          LogTocEntrySamples(reporter, "NCX selected", *toc_entries, 4);
+      } else if (reporter) {
+        DBG_LOG(reporter, "EPUB: NCX discarded (low-quality TOC)");
       }
-    } else if (app) {
-      DBG_LOG(app, "EPUB: NCX skipped (size/format)");
+    } else if (reporter) {
+      DBG_LOG(reporter, "EPUB: NCX skipped (size/format)");
     }
   }
 
@@ -315,27 +314,27 @@ bool LoadTocEntriesFromPackage(unzFile uf, epub_data_t &parsedata,
       if (item->media_type == "application/xhtml+xml" &&
           ContainsToken(item->properties, "nav")) {
         toc_doc_path = BuildDocPath(opf_folder, item->href);
-        if (app) {
+        if (reporter) {
           char msg[192];
           snprintf(msg, sizeof(msg), "EPUB: fallback NAV %s",
                    toc_doc_path.c_str());
-          DBG_LOG(app, msg);
+          DBG_LOG(reporter, msg);
         }
-        if (ReadZipEntryText(uf, toc_doc_path, toc_xml, app, "NAV-FALLBACK")) {
+        if (ReadZipEntryText(uf, toc_doc_path, toc_xml, reporter, "NAV-FALLBACK")) {
           std::vector<toc_entry_t> nav_entries;
           bool parsed_nav = epub_ncx_parser::ParseNavWithExpat(
               toc_xml, toc_doc_path, &nav_entries);
-          if (parsed_nav && app)
-            LogTocEntrySamples(app, "NAV fallback parsed", nav_entries, 4);
+          if (parsed_nav && reporter)
+            LogTocEntrySamples(reporter, "NAV fallback parsed", nav_entries, 4);
           if (parsed_nav && looks_reasonable_toc(nav_entries)) {
             ReorderNavEntriesBySpine(parsedata, opf_folder, &nav_entries);
             *toc_entries = nav_entries;
             toc_loaded = true;
-            if (app)
-              LogTocEntrySamples(app, "NAV fallback selected", *toc_entries, 4);
+            if (reporter)
+              LogTocEntrySamples(reporter, "NAV fallback selected", *toc_entries, 4);
           }
-        } else if (app) {
-          DBG_LOG(app, "EPUB: fallback NAV skipped");
+        } else if (reporter) {
+          DBG_LOG(reporter, "EPUB: fallback NAV skipped");
         }
         if (toc_loaded)
           break;
@@ -349,29 +348,29 @@ bool LoadTocEntriesFromPackage(unzFile uf, epub_data_t &parsedata,
         continue;
       if (item->media_type == "application/x-dtbncx+xml") {
         toc_doc_path = BuildDocPath(opf_folder, item->href);
-        if (app) {
+        if (reporter) {
           char msg[192];
           snprintf(msg, sizeof(msg), "EPUB: fallback NCX %s",
                    toc_doc_path.c_str());
-          DBG_LOG(app, msg);
+          DBG_LOG(reporter, msg);
         }
-        if (ReadZipEntryText(uf, toc_doc_path, toc_xml, app, "NCX-FALLBACK")) {
+        if (ReadZipEntryText(uf, toc_doc_path, toc_xml, reporter, "NCX-FALLBACK")) {
           std::vector<toc_entry_t> ncx_entries;
           bool parsed =
               epub_ncx_parser::ParseNcxWithExpat(toc_xml, toc_doc_path, &ncx_entries);
           if (!parsed)
             parsed = epub_ncx_parser::ParseNcxLightweight(toc_xml, toc_doc_path,
                                                           &ncx_entries);
-          if (parsed && app)
-            LogTocEntrySamples(app, "NCX fallback parsed", ncx_entries, 4);
+          if (parsed && reporter)
+            LogTocEntrySamples(reporter, "NCX fallback parsed", ncx_entries, 4);
           if (parsed && looks_reasonable_toc(ncx_entries)) {
             *toc_entries = ncx_entries;
             toc_loaded = true;
-            if (app)
-              LogTocEntrySamples(app, "NCX fallback selected", *toc_entries, 4);
+            if (reporter)
+              LogTocEntrySamples(reporter, "NCX fallback selected", *toc_entries, 4);
           }
-        } else if (app) {
-          DBG_LOG(app, "EPUB: fallback NCX skipped");
+        } else if (reporter) {
+          DBG_LOG(reporter, "EPUB: fallback NCX skipped");
         }
         if (toc_loaded)
           break;
@@ -383,4 +382,3 @@ bool LoadTocEntriesFromPackage(unzFile uf, epub_data_t &parsedata,
 }
 
 } // namespace epub_toc_package_loader_utils
-
