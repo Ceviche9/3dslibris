@@ -25,10 +25,11 @@ int main() {
   Button *previous = reinterpret_cast<Button *>(3);
   Button *next = reinterpret_cast<Button *>(4);
   Button *preferences = reinterpret_cast<Button *>(5);
+  IStatusReporter *reporter = reinterpret_cast<IStatusReporter *>(6);
   u8 color_mode = 2;
 
   const MenuContext populated = {app, text, previous, next, preferences,
-                                 &color_mode};
+                                 &color_mode, reporter};
   TestMenu menu(populated);
   Expect(menu.app == app, "app pointer");
   Expect(menu.ts == text, "text pointer");
@@ -36,6 +37,7 @@ int main() {
   Expect(menu.buttonnext == next, "next button pointer");
   Expect(menu.buttonprefs == preferences, "preferences button pointer");
   Expect(menu.color_mode == &color_mode, "color mode pointer");
+  Expect(menu.status_reporter == reporter, "status reporter pointer");
   Expect(menu.pagesize == 7, "default page size");
   Expect(menu.selected == 0, "default selection");
   Expect(menu.page == 0, "default page");
@@ -49,6 +51,7 @@ int main() {
   Expect(null_menu.buttonnext == nullptr, "null next button pointer");
   Expect(null_menu.buttonprefs == nullptr, "null preferences button pointer");
   Expect(null_menu.color_mode == nullptr, "null color mode pointer");
+  Expect(null_menu.status_reporter == nullptr, "null status reporter pointer");
 
   std::printf("All menu_context tests passed.\n");
   return 0;

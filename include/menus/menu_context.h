@@ -4,6 +4,7 @@
 
 class App;
 class Button;
+class IStatusReporter;
 class Text;
 
 struct MenuContext {
@@ -13,4 +14,5 @@ struct MenuContext {
   Button *next_button;
   Button *preferences_button;
   const u8 *color_mode;
+  IStatusReporter *status_reporter;
 };

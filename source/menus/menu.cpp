@@ -19,6 +19,7 @@ Menu::Menu(const MenuContext &context) {
     buttonnext = context.next_button;
     buttonprefs = context.preferences_button;
     color_mode = context.color_mode;
+    status_reporter = context.status_reporter;
     buttons.clear();
     pagesize = 7;
     selected = 0;

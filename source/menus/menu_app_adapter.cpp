@@ -14,6 +14,7 @@ MenuContext BuildMenuContext(App *requested_app) {
     context.next_button = &app->buttonnext;
     context.preferences_button = &app->buttonprefs;
     context.color_mode = &app->colorMode;
+    context.status_reporter = app;
   }
   return context;
 }

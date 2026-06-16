@@ -34,6 +34,7 @@ public:
   class Button *buttonnext;    //! Pointer into app->buttonnext.
   class Button *buttonprefs;   //! Pointer into app->buttonprefs.
   const u8 *color_mode;        //! Pointer into app->colorMode.
+  class IStatusReporter *status_reporter;
   std::vector<class Button *> buttons;
   bool dirty;
   u16 page;

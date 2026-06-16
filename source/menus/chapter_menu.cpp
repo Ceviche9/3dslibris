@@ -16,7 +16,6 @@
 #include <algorithm>
 #include <ctype.h>
 
-#include "app/app.h"
 #include "book/book.h"
 #include "book/page.h"
 #include "menus/chapter_menu_utils.h"
@@ -520,7 +519,7 @@ void ChapterMenu::BuildEntries(Book *book, Text *text,
   SetHeaderTitle(TocQualityLabel(book->GetTocQuality()));
 
   const std::vector<ChapterEntry> &chapters = book->GetChapters();
-  DBG_LOGF(app, "INDEX build fmt=%d tocq=%d entries=%u pages=%u",
+  DBG_LOGF(status_reporter, "INDEX build fmt=%d tocq=%d entries=%u pages=%u",
            (int)book->format, (int)book->GetTocQuality(),
            (unsigned)chapters.size(), (unsigned)book->GetPageCount());
   labels.reserve(chapters.size());
@@ -552,7 +551,8 @@ void ChapterMenu::BuildEntries(Book *book, Text *text,
 
 bool ChapterMenu::ResolveTargetPage(u16 index, u16 *page_out) {
   if (!PagedListMenu::ResolveTargetPage(index, page_out)) {
-    DBG_LOGF(app, "INDEX resolve base failed idx=%u", (unsigned)index);
+    DBG_LOGF(status_reporter, "INDEX resolve base failed idx=%u",
+             (unsigned)index);
     return false;
   }
   Book *book = current_book_;
@@ -560,7 +560,8 @@ bool ChapterMenu::ResolveTargetPage(u16 index, u16 *page_out) {
     return true;
   if (index >= entry_titles.size() || index >= entry_pages.size() ||
       index >= approx_page_cache.size()) {
-    DBG_LOGF(app, "INDEX resolve bounds idx=%u titles=%u pages=%u approx=%u",
+    DBG_LOGF(status_reporter,
+             "INDEX resolve bounds idx=%u titles=%u pages=%u approx=%u",
              (unsigned)index, (unsigned)entry_titles.size(),
              (unsigned)entry_pages.size(), (unsigned)approx_page_cache.size());
     return true;
@@ -568,7 +569,8 @@ bool ChapterMenu::ResolveTargetPage(u16 index, u16 *page_out) {
 
   TocQuality q = book->GetTocQuality();
   if (q == TOC_QUALITY_UNKNOWN) {
-    DBG_LOGF(app, "INDEX resolve toc unknown idx=%u page=%u", (unsigned)index,
+    DBG_LOGF(status_reporter, "INDEX resolve toc unknown idx=%u page=%u",
+             (unsigned)index,
              (unsigned)*page_out);
     return true;
   }
@@ -620,7 +622,7 @@ bool ChapterMenu::ResolveTargetPage(u16 index, u16 *page_out) {
         char msg[192];
         snprintf(msg, sizeof(msg), "INDEX remap sel=%u from=%u to=%u delta=%d",
                  (unsigned)index, (unsigned)from, (unsigned)to, delta);
-        DBG_LOG(app, msg);
+        DBG_LOG(status_reporter, msg);
       }
       *page_out = resolved;
     } else {
@@ -631,7 +633,7 @@ bool ChapterMenu::ResolveTargetPage(u16 index, u16 *page_out) {
                  "INDEX remap rejected sel=%u from=%u to=%u delta=%d max=%d",
                  (unsigned)index, (unsigned)from, (unsigned)to, delta,
                  max_delta);
-        DBG_LOG(app, msg);
+        DBG_LOG(status_reporter, msg);
       }
     }
   } else {
