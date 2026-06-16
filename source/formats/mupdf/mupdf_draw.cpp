@@ -132,15 +132,22 @@ MuPdfDeferredStage GetNextMuPdfDeferredStage(
     return MuPdfDeferredStage::Preview;
   }
 
-  if (!BitmapCacheValid(mupdf_state->current_interactive_tile, page_index)) {
+  if (!BitmapCacheValid(mupdf_state->current_interactive_tile, page_index) &&
+      !HasMuPdfInteractiveRenderFailed(mupdf_state, page_index)) {
     return MuPdfDeferredStage::Interactive;
   }
 
   if (app_flow_utils::MuPdfWantsFinalQualityRender(
           mupdf_state->document_kind) &&
+      !HasMuPdfFinalRenderFailed(mupdf_state, page_index) &&
       (mupdf_state->final_cache_pending ||
        !BitmapCacheValid(mupdf_state->current_final_zoom, page_index))) {
     return MuPdfDeferredStage::Final;
+  }
+
+  if (HasMuPdfInteractiveRenderFailed(mupdf_state, page_index) ||
+      HasMuPdfFinalRenderFailed(mupdf_state, page_index)) {
+    return MuPdfDeferredStage::None;
   }
 
   if (!app_flow_utils::MuPdfShouldPrefetchAdjacent(
@@ -382,6 +389,7 @@ void Book::DrawCurrentMuPdfView(Text *ts) {
     ResetBitmapCache(&mupdf_state->current_final_zoom);
     ResetAdjacentSlot(&mupdf_state->prev_slot, mupdf_state->ctx);
     ResetAdjacentSlot(&mupdf_state->next_slot, mupdf_state->ctx);
+    ResetMuPdfRenderFailureState(mupdf_state);
     mupdf_state->target_top_width = top_dims.width;
     mupdf_state->target_top_height = top_dims.height;
     mupdf_state->target_bottom_width = bottom_dims.width;
@@ -447,7 +455,9 @@ void Book::DrawCurrentMuPdfView(Text *ts) {
       BitmapCacheValid(mupdf_state->current_interactive_tile, page_index);
   const bool wants_final_cache =
       app_flow_utils::MuPdfWantsFinalQualityRender(mupdf_state->document_kind);
-  mupdf_state->final_cache_pending = wants_final_cache && !has_final_cache;
+  mupdf_state->final_cache_pending =
+      wants_final_cache && !has_final_cache &&
+      !HasMuPdfFinalRenderFailed(mupdf_state, page_index);
   const bool high_quality_viewport =
       !mupdf_state->viewport.interaction_active;
   const float preview_source_width =
@@ -630,7 +640,8 @@ bool Book::PumpDeferredMuPdfWork(u32 budget_ms) {
       return worked;
   }
 
-  if (!BitmapCacheValid(mupdf_state->current_interactive_tile, page_index)) {
+  if (!BitmapCacheValid(mupdf_state->current_interactive_tile, page_index) &&
+      !HasMuPdfInteractiveRenderFailed(mupdf_state, page_index)) {
     if (EnsureCurrentMuPdfInteractiveTile(mupdf_state, page_index))
       worked = true;
     if (budget_ms > 0 && osGetTime() - start_ms >= budget_ms)
@@ -638,7 +649,8 @@ bool Book::PumpDeferredMuPdfWork(u32 budget_ms) {
   }
 
   if (mupdf_state->final_cache_pending ||
-      !BitmapCacheValid(mupdf_state->current_final_zoom, page_index) ||
+      (!HasMuPdfFinalRenderFailed(mupdf_state, page_index) &&
+       !BitmapCacheValid(mupdf_state->current_final_zoom, page_index)) ||
       mupdf_state->incremental.active) {
     if (PumpMuPdfIncrementalStrip(mupdf_state, page_index))
       worked = true;

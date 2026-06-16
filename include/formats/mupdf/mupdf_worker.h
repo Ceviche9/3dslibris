@@ -5,6 +5,11 @@
 #include "formats/common/pdf_view_utils.h"
 
 void CancelMuPdfIncrementalRenderState(Book::MuPdfState *mupdf_state);
+void ResetMuPdfRenderFailureState(Book::MuPdfState *mupdf_state);
+bool HasMuPdfInteractiveRenderFailed(const Book::MuPdfState *mupdf_state,
+                                     int page_index);
+bool HasMuPdfFinalRenderFailed(const Book::MuPdfState *mupdf_state,
+                               int page_index);
 void ReleaseMuPdfMemoryForSuspendImpl(Book::MuPdfState *mupdf_state);
 bool PromoteMuPdfAdjacentSlotIfMatching(Book::MuPdfState *mupdf_state,
                                         int page_index);

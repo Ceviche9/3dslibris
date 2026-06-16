@@ -31,6 +31,30 @@ inline void ReleaseAdjacentSlotMemory(Book::MuPdfState::AdjacentSlot *slot,
 
 } // namespace
 
+void ResetMuPdfRenderFailureState(Book::MuPdfState *mupdf_state) {
+  if (!mupdf_state)
+    return;
+  mupdf_state->interactive_render_failed_page = -1;
+  mupdf_state->interactive_render_failed_zoom = -1;
+  mupdf_state->final_render_failed_page = -1;
+  mupdf_state->final_render_failed_zoom = -1;
+}
+
+bool HasMuPdfInteractiveRenderFailed(const Book::MuPdfState *mupdf_state,
+                                     int page_index) {
+  return mupdf_state &&
+         mupdf_state->interactive_render_failed_page == page_index &&
+         mupdf_state->interactive_render_failed_zoom ==
+             mupdf_state->viewport.zoom_index;
+}
+
+bool HasMuPdfFinalRenderFailed(const Book::MuPdfState *mupdf_state,
+                               int page_index) {
+  return mupdf_state && mupdf_state->final_render_failed_page == page_index &&
+         mupdf_state->final_render_failed_zoom ==
+             mupdf_state->viewport.max_zoom_index;
+}
+
 void ReleaseMuPdfMemoryForSuspendImpl(Book::MuPdfState *mupdf_state) {
   if (!mupdf_state)
     return;
@@ -43,6 +67,7 @@ void ReleaseMuPdfMemoryForSuspendImpl(Book::MuPdfState *mupdf_state) {
   ReleaseBitmapCacheMemory(&mupdf_state->current_interactive_tile);
   ReleaseBitmapCacheMemory(&mupdf_state->current_final_zoom);
   mupdf_state->final_cache_pending = false;
+  ResetMuPdfRenderFailureState(mupdf_state);
   if (mupdf_state->cached_display_list && mupdf_state->ctx) {
     fz_drop_display_list(mupdf_state->ctx, mupdf_state->cached_display_list);
     mupdf_state->cached_display_list = NULL;
@@ -206,6 +231,8 @@ bool EnsureCurrentMuPdfInteractiveTile(Book::MuPdfState *mupdf_state,
   PromoteMuPdfAdjacentSlotIfMatching(mupdf_state, page_index);
   if (BitmapCacheValid(mupdf_state->current_interactive_tile, page_index))
     return true;
+  if (HasMuPdfInteractiveRenderFailed(mupdf_state, page_index))
+    return false;
 
   fz_display_list *display_list = NULL;
   if (!EnsureMuPdfDisplayListForPage(mupdf_state, page_index, &display_list))
@@ -227,6 +254,15 @@ bool EnsureCurrentMuPdfInteractiveTile(Book::MuPdfState *mupdf_state,
                        display_list, display_list ? NULL : &new_list,
                        mupdf_state->reporter);
   if (!render_ok) {
+    mupdf_state->interactive_render_failed_page = page_index;
+    mupdf_state->interactive_render_failed_zoom =
+        mupdf_state->viewport.zoom_index;
+    mupdf_state->final_render_failed_page = page_index;
+    mupdf_state->final_render_failed_zoom = mupdf_state->viewport.max_zoom_index;
+    mupdf_state->final_cache_pending = false;
+    DBG_LOGF_CAT(mupdf_state->reporter, DBG_LEVEL_WARN, DBG_CAT_RENDER,
+                 "MUPDF interactive: render-disabled page=%d zoom=%d",
+                 page_index, mupdf_state->viewport.zoom_index);
     return false;
   }
 
@@ -445,9 +481,12 @@ bool PumpMuPdfIncrementalStripWorker(Book::MuPdfState *mupdf_state,
 
     if (!ok) {
       CancelMuPdfIncrementalRenderState(mupdf_state);
-      mupdf_state->final_cache_pending =
-          app_flow_utils::MuPdfWantsFinalQualityRender(
-              mupdf_state->document_kind);
+      mupdf_state->final_render_failed_page = page_index;
+      mupdf_state->final_render_failed_zoom = mupdf_state->viewport.max_zoom_index;
+      mupdf_state->final_cache_pending = false;
+      DBG_LOGF_CAT(mupdf_state->reporter, DBG_LEVEL_WARN, DBG_CAT_RENDER,
+                   "MUPDF final: worker-render-disabled page=%d zoom=%d",
+                   page_index, mupdf_state->viewport.max_zoom_index);
       return false;
     }
 
@@ -509,6 +548,11 @@ bool PumpMuPdfIncrementalStripWorker(Book::MuPdfState *mupdf_state,
 bool PumpMuPdfIncrementalStrip(Book::MuPdfState *mupdf_state, int page_index) {
   if (!mupdf_state || !mupdf_state->ctx || !mupdf_state->doc)
     return false;
+  if (HasMuPdfFinalRenderFailed(mupdf_state, page_index)) {
+    mupdf_state->final_cache_pending = false;
+    CancelMuPdfIncrementalRenderState(mupdf_state);
+    return false;
+  }
   if (!app_flow_utils::MuPdfWantsFinalQualityRender(
           mupdf_state->document_kind)) {
     mupdf_state->final_cache_pending = false;
@@ -610,9 +654,12 @@ bool PumpMuPdfIncrementalStrip(Book::MuPdfState *mupdf_state, int page_index) {
     inc.strips_completed++;
   } else {
     CancelMuPdfIncrementalRenderState(mupdf_state);
-    mupdf_state->final_cache_pending =
-        app_flow_utils::MuPdfWantsFinalQualityRender(
-            mupdf_state->document_kind);
+    mupdf_state->final_render_failed_page = page_index;
+    mupdf_state->final_render_failed_zoom = mupdf_state->viewport.max_zoom_index;
+    mupdf_state->final_cache_pending = false;
+    DBG_LOGF_CAT(mupdf_state->reporter, DBG_LEVEL_WARN, DBG_CAT_RENDER,
+                 "MUPDF final: render-disabled page=%d zoom=%d", page_index,
+                 mupdf_state->viewport.max_zoom_index);
     return false;
   }
 

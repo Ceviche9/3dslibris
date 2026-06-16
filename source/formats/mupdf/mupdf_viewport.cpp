@@ -29,6 +29,7 @@ static void ResetMuPdfDeferredCachesForSynchronousRender(
     ResetAdjacentSlot(&mupdf_state->prev_slot, mupdf_state->ctx);
     ResetAdjacentSlot(&mupdf_state->next_slot, mupdf_state->ctx);
   }
+  ResetMuPdfRenderFailureState(mupdf_state);
   mupdf_state->final_cache_pending = false;
 }
 
