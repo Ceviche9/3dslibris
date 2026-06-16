@@ -10,6 +10,7 @@
 #pragma once
 
 #include "menus/menu.h"
+#include "menus/paged_list_menu_context.h"
 #include <3ds.h>
 #include <string>
 #include <vector>
@@ -19,6 +20,8 @@ class Book;
 class PagedListMenu : public Menu {
 public:
   PagedListMenu(class App *app, const char *header_title);
+  PagedListMenu(const PagedListMenuContext &context,
+                const char *header_title);
   virtual ~PagedListMenu();
 
   void Init();
@@ -60,6 +63,7 @@ private:
   void HandleTouchInput(const FrameInput &input);
   void LayoutFooterButtons();
 
+  PagedListMenuContext context_;
   std::string header_title;
   std::vector<u16> target_pages;
   bool wait_input_release;

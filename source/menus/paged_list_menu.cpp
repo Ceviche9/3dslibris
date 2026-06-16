@@ -13,7 +13,6 @@
 #include <algorithm>
 #include <stdio.h>
 
-#include "app/app.h"
 #include "book/book.h"
 #include "book/book_renderer.h"
 #include "ui/button.h"
@@ -42,7 +41,9 @@ static u16 ClampPageTarget(u16 target_page, u16 page_count) {
 
 } // namespace
 
-PagedListMenu::PagedListMenu(App *_app, const char *title) : Menu(_app) {
+PagedListMenu::PagedListMenu(const PagedListMenuContext &context,
+                             const char *title)
+    : Menu(context.base), context_(context) {
   current_book_ = nullptr;
   pagesize = 7;
   header_title = title ? title : "";
@@ -78,9 +79,9 @@ void PagedListMenu::Init() {
   buttons.clear();
   target_pages.clear();
 
-  current_book_ = app ? app->GetCurrentBook() : nullptr;
+  current_book_ = context_.GetCurrentBook();
   if (!current_book_) {
-    DBG_LOGF(app, "LIST init skipped title=%s app=%p book=%p",
+    DBG_LOGF(status_reporter, "LIST init skipped title=%s app=%p book=%p",
              header_title.c_str(), (void *)app, (void *)current_book_);
     dirty = true;
     return;
@@ -157,7 +158,7 @@ void PagedListMenu::Init() {
   wait_input_release = true;
   wait_input_release_started_ms = osGetTime();
   dirty = true;
-  DBG_LOGF(app, "LIST init title=%s entries=%u pages=%u book=%p",
+  DBG_LOGF(status_reporter, "LIST init title=%s entries=%u pages=%u book=%p",
            header_title.c_str(), (unsigned)buttons.size(),
            (unsigned)GetPageCount(), (void *)current_book_);
 }
@@ -165,11 +166,11 @@ void PagedListMenu::Init() {
 void PagedListMenu::Draw() {
 #ifdef DSLIBRIS_DEBUG
   static int s_list_draw_begin_budget = 24;
-  if (app && s_list_draw_begin_budget > 0) {
+  if (status_reporter && s_list_draw_begin_budget > 0) {
     const u16 before0 = ts->screenright[0];
     const u16 before1 =
         ts->screenright[(size_t)10 * (size_t)ts->display.height + 10];
-    DBG_LOGF(app,
+    DBG_LOGF(status_reporter,
              "LIST draw begin title=%s dirty=%d page=%u sel=%u before0=%04x before1=%04x",
              header_title.c_str(), dirty ? 1 : 0, (unsigned)GetCurrentPage(),
              (unsigned)selected, (unsigned)before0, (unsigned)before1);
@@ -190,7 +191,7 @@ void PagedListMenu::Draw() {
 #ifdef DSLIBRIS_DEBUG
   static int s_draw_trace_budget = 48;
   if (s_draw_trace_budget > 0) {
-    DBG_LOGF(app,
+    DBG_LOGF(status_reporter,
              "LIST draw title=%s entries=%u page=%u/%u sel=%u range=[%u,%u)",
              header_title.c_str(), (unsigned)buttons.size(),
              (unsigned)GetCurrentPage(), (unsigned)GetPageCount(),
@@ -223,7 +224,7 @@ void PagedListMenu::Draw() {
     const u16 after0 = ts->screenright[0];
     const u16 after1 =
         ts->screenright[(size_t)10 * (size_t)ts->display.height + 10];
-    DBG_LOGF(app,
+    DBG_LOGF(status_reporter,
              "LIST draw end title=%s dirty=%d page=%u sel=%u after0=%04x after1=%04x",
              header_title.c_str(), dirty ? 1 : 0, (unsigned)GetCurrentPage(),
              (unsigned)selected, (unsigned)after0, (unsigned)after1);
@@ -234,7 +235,7 @@ void PagedListMenu::Draw() {
 
 void PagedListMenu::HandleInput(const FrameInput &input) {
   const u32 keys = input.keys_down;
-  auto key = app->key;
+  const KeyMap &key = context_.keys;
   const u32 release_mask = KEY_TOUCH | key.a | key.b | key.start | key.select |
                            key.dup | key.ddown | key.dleft | key.dright |
                            key.up | key.down | key.left | key.right | key.l |
@@ -247,8 +248,9 @@ void PagedListMenu::HandleInput(const FrameInput &input) {
       const u64 elapsed = input.timestamp_ms - wait_input_release_started_ms;
 #ifdef DSLIBRIS_DEBUG
       static int s_wait_trace_budget = 32;
-      if (app && s_wait_trace_budget > 0) {
-        DBG_LOGF(app, "LIST waiting title=%s held=0x%08lx elapsed=%llums",
+      if (status_reporter && s_wait_trace_budget > 0) {
+        DBG_LOGF(status_reporter,
+                 "LIST waiting title=%s held=0x%08lx elapsed=%llums",
                  header_title.c_str(), (unsigned long)held,
                  (unsigned long long)elapsed);
         s_wait_trace_budget--;
@@ -256,14 +258,15 @@ void PagedListMenu::HandleInput(const FrameInput &input) {
 #endif
       if (elapsed < 300)
         return;
-      if (app) {
-        DBG_LOGF(app, "LIST release-timeout title=%s held=0x%08lx elapsed=%llums",
+      if (status_reporter) {
+        DBG_LOGF(status_reporter,
+                 "LIST release-timeout title=%s held=0x%08lx elapsed=%llums",
                  header_title.c_str(), (unsigned long)held,
                  (unsigned long long)elapsed);
       }
     }
-    if (app) {
-      DBG_LOGF(app, "LIST release-ok title=%s held=0x%08lx",
+    if (status_reporter) {
+      DBG_LOGF(status_reporter, "LIST release-ok title=%s held=0x%08lx",
                header_title.c_str(), (unsigned long)held);
     }
     wait_input_release = false;
@@ -276,8 +279,9 @@ void PagedListMenu::HandleInput(const FrameInput &input) {
   const u32 list_prev_keys = key.dup | key.dleft | key.up | key.left;
 #ifdef DSLIBRIS_DEBUG
   static int s_input_trace_budget = 128;
-  if (app && s_input_trace_budget > 0 && (keys != 0 || input.keys_held != 0)) {
-    DBG_LOGF(app,
+  if (status_reporter && s_input_trace_budget > 0 &&
+      (keys != 0 || input.keys_held != 0)) {
+    DBG_LOGF(status_reporter,
              "LIST input title=%s keys=0x%08lx non_touch=0x%08lx held=0x%08lx sel=%u/%u page=%u/%u dirty=%d wait=%d",
              header_title.c_str(), (unsigned long)keys,
              (unsigned long)non_touch_keys, (unsigned long)input.keys_held,
@@ -314,8 +318,8 @@ void PagedListMenu::SelectNext() {
     UpdatePageSize();
     dirty = true;
 #ifdef DSLIBRIS_DEBUG
-    if (app) {
-      DBG_LOGF(app, "LIST nav title=%s action=next sel=%u page=%u",
+    if (status_reporter) {
+      DBG_LOGF(status_reporter, "LIST nav title=%s action=next sel=%u page=%u",
                header_title.c_str(), (unsigned)selected,
                (unsigned)GetCurrentPage());
     }
@@ -332,8 +336,8 @@ void PagedListMenu::SelectPrevious() {
     UpdatePageSize();
     dirty = true;
 #ifdef DSLIBRIS_DEBUG
-    if (app) {
-      DBG_LOGF(app, "LIST nav title=%s action=prev sel=%u page=%u",
+    if (status_reporter) {
+      DBG_LOGF(status_reporter, "LIST nav title=%s action=prev sel=%u page=%u",
                header_title.c_str(), (unsigned)selected,
                (unsigned)GetCurrentPage());
     }
@@ -352,8 +356,9 @@ void PagedListMenu::NextPage() {
                                                 : (u16)(buttons.size() - 1);
     dirty = true;
 #ifdef DSLIBRIS_DEBUG
-    if (app) {
-      DBG_LOGF(app, "LIST nav title=%s action=next_page sel=%u page=%u",
+    if (status_reporter) {
+      DBG_LOGF(status_reporter,
+               "LIST nav title=%s action=next_page sel=%u page=%u",
                header_title.c_str(), (unsigned)selected,
                (unsigned)GetCurrentPage());
     }
@@ -370,8 +375,9 @@ void PagedListMenu::PreviousPage() {
     selected = GetPageStart(page);
     dirty = true;
 #ifdef DSLIBRIS_DEBUG
-    if (app) {
-      DBG_LOGF(app, "LIST nav title=%s action=prev_page sel=%u page=%u",
+    if (status_reporter) {
+      DBG_LOGF(status_reporter,
+               "LIST nav title=%s action=prev_page sel=%u page=%u",
                header_title.c_str(), (unsigned)selected,
                (unsigned)GetCurrentPage());
     }
@@ -382,7 +388,7 @@ void PagedListMenu::PreviousPage() {
 void PagedListMenu::ActivateSelected() {
   Book *book = current_book_;
   if (!book || buttons.empty() || selected >= target_pages.size()) {
-    DBG_LOGF(app,
+    DBG_LOGF(status_reporter,
              "LIST activate skipped title=%s book=%p buttons=%u sel=%u targets=%u",
              header_title.c_str(), (void *)book, (unsigned)buttons.size(),
              (unsigned)selected, (unsigned)target_pages.size());
@@ -392,13 +398,13 @@ void PagedListMenu::ActivateSelected() {
   u16 target_page = target_pages[selected];
   const bool resolved = ResolveTargetPage(selected, &target_page);
   if (!resolved) {
-    DBG_LOGF(app, "LIST resolve failed title=%s sel=%u targets=%u",
+    DBG_LOGF(status_reporter, "LIST resolve failed title=%s sel=%u targets=%u",
              header_title.c_str(), (unsigned)selected,
              (unsigned)target_pages.size());
     return;
   }
 
-  DBG_LOGF(app, "LIST activate title=%s sel=%u target=%u cur=%u",
+  DBG_LOGF(status_reporter, "LIST activate title=%s sel=%u target=%u cur=%u",
            header_title.c_str(), (unsigned)selected, (unsigned)target_page,
            (unsigned)book->GetPosition());
   const u16 page_count = book->GetPageCount();
@@ -406,13 +412,13 @@ void PagedListMenu::ActivateSelected() {
     return;
   const u16 unclamped_target = target_page;
   target_page = ClampPageTarget(target_page, page_count);
-  DBG_LOGF(app, "LIST target title=%s raw=%u clamped=%u page_count=%u",
+  DBG_LOGF(status_reporter, "LIST target title=%s raw=%u clamped=%u page_count=%u",
            header_title.c_str(), (unsigned)unclamped_target,
            (unsigned)target_page, (unsigned)page_count);
   book->SetPosition(target_page);
-  app->ShowCurrentBookView();
+  context_.ShowCurrentBookView();
   book_renderer::DrawCurrentView(book, ts);
-  app->RequestStatusRedraw();
+  context_.RequestStatusRedraw();
 }
 
 bool PagedListMenu::ResolveTargetPage(u16 index, u16 *page_out) {
@@ -472,25 +478,27 @@ void PagedListMenu::SelectItem(u16 index) {
 }
 
 void PagedListMenu::Back() {
-  DBG_LOGF(app, "LIST back title=%s from_book_ctx=%d", header_title.c_str(),
-           app->IsBookSettingsContext() ? 1 : 0);
-  if (app->IsBookSettingsContext()) {
-    app->ShowSettingsView(true);
+  const bool from_book_settings = context_.IsBookSettingsContext();
+  DBG_LOGF(status_reporter, "LIST back title=%s from_book_ctx=%d",
+           header_title.c_str(), from_book_settings ? 1 : 0);
+  if (from_book_settings) {
+    context_.ShowSettingsView(true);
     return;
   }
 
-  app->ShowCurrentBookView();
+  context_.ShowCurrentBookView();
   if (current_book_) {
     book_renderer::DrawCurrentView(current_book_, ts);
   }
-  app->RequestStatusRedraw();
+  context_.RequestStatusRedraw();
 }
 
 void PagedListMenu::HandleTouchInput(const FrameInput &input) {
   LayoutFooterButtons();
   TouchCandidates candidates;
-  touch::BuildCandidates(app->MapTouch(input), &candidates);
-  DBG_LOGF(app, "LIST touch title=%s c0=(%d,%d)", header_title.c_str(),
+  touch::BuildCandidates(context_.MapTouch(input), &candidates);
+  DBG_LOGF(status_reporter, "LIST touch title=%s c0=(%d,%d)",
+           header_title.c_str(),
            candidates.points[0].x, candidates.points[0].y);
 
   int footerX = -1;
@@ -513,17 +521,20 @@ void PagedListMenu::HandleTouchInput(const FrameInput &input) {
   }
 
   if (touch::HitsButton(candidates, buttonprefs, 4)) {
-    DBG_LOGF(app, "LIST touch footer=back title=%s", header_title.c_str());
+    DBG_LOGF(status_reporter, "LIST touch footer=back title=%s",
+             header_title.c_str());
     Back();
     return;
   }
   if (touch::HitsButton(candidates, buttonnext, 4)) {
-    DBG_LOGF(app, "LIST touch footer=next title=%s", header_title.c_str());
+    DBG_LOGF(status_reporter, "LIST touch footer=next title=%s",
+             header_title.c_str());
     NextPage();
     return;
   }
   if (touch::HitsButton(candidates, buttonprev, 4)) {
-    DBG_LOGF(app, "LIST touch footer=prev title=%s", header_title.c_str());
+    DBG_LOGF(status_reporter, "LIST touch footer=prev title=%s",
+             header_title.c_str());
     PreviousPage();
     return;
   }
@@ -535,8 +546,8 @@ void PagedListMenu::HandleTouchInput(const FrameInput &input) {
     } else {
       NextPage();
     }
-  DBG_LOGF(app, "LIST touch footer-band title=%s x=%d", header_title.c_str(),
-           footerX);
+  DBG_LOGF(status_reporter, "LIST touch footer-band title=%s x=%d",
+           header_title.c_str(), footerX);
     return;
   }
 
@@ -546,12 +557,13 @@ void PagedListMenu::HandleTouchInput(const FrameInput &input) {
     for (u16 i = start; i < end; i++) {
       if (touch::HitsButton(candidates, buttons[i], 4)) {
         selected = i;
-        DBG_LOGF(app, "LIST touch button-hit title=%s sel=%u",
+        DBG_LOGF(status_reporter, "LIST touch button-hit title=%s sel=%u",
                  header_title.c_str(), (unsigned)selected);
         ActivateSelected();
         return;
       }
     }
   }
-  DBG_LOGF(app, "LIST touch no-hit title=%s", header_title.c_str());
+  DBG_LOGF(status_reporter, "LIST touch no-hit title=%s",
+           header_title.c_str());
 }

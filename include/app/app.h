@@ -71,6 +71,7 @@ https://github.com/rhaleblian/dslibris
 #include "shared/status_reporter.h"
 #include "app/app_lifecycle_state.h"
 #include "app/frame_input.h"
+#include "app/key_map.h"
 
 class Book;
 class Prefs;
@@ -120,15 +121,7 @@ public:
   std::string fontdir;          //! Directory to search for font files
 
   //! key functions are remappable to support screen flipping.
-  struct
-  {
-    u32 up, down, left, right, // Circle Pad directions.
-         zl, zr, l, r,              // Shoulder buttons.
-         dup, ddown, dleft, dright, // D-pad directions as separate entries for remapping buttons.
-         a, b, x, y,          // Face buttons.
-         start, select;       // Start and Select buttons.
-    u32 downrepeat;
-  } key;
+  KeyMap key;
 
   std::vector<Button *> buttons;
   Button buttonprev, buttonnext, buttonprefs, buttonback; //! Buttons on browser bottom.
