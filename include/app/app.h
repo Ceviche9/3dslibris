@@ -71,6 +71,7 @@ https://github.com/rhaleblian/dslibris
 #include "shared/status_reporter.h"
 #include "app/app_lifecycle_state.h"
 #include "app/frame_input.h"
+#include "app/app_mode.h"
 #include "app/key_map.h"
 
 class Book;
@@ -83,23 +84,6 @@ class StartupController;
 class MainLoopController;
 
 #define APP_BROWSER_BUTTON_COUNT 4
-
-// Forward declarations for controller classes to avoid circular dependencies in headers.
-enum class AppMode : u8
-{
-  Book = 0,
-  Browser = 1,
-  Prefs = 2,
-  PrefsFont = 3,
-  PrefsFontBold = 4,
-  PrefsFontItalic = 5,
-  PrefsFontBoldItalic = 6,
-  Quit = 7,
-  Bookmarks = 8,
-  Chapters = 9,
-  Opening = 10,
-  BookInfo = 11,
-};
 
 //! \brief Main application.
 //!

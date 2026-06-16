@@ -17,6 +17,7 @@
 #include <vector>
 #include "ui/button.h"
 #include "menus/menu.h"
+#include "settings/font_menu_context.h"
 #include "ui/text.h"
 
 enum class AppMode : u8;
@@ -24,6 +25,7 @@ enum class AppMode : u8;
 class FontMenu : public Menu {
 public:
     FontMenu(App* app);
+    explicit FontMenu(const FontMenuContext &context);
     ~FontMenu();
     void Open(AppMode requested_mode);
     void draw();
@@ -62,6 +64,7 @@ private:
     void selectPrevious();
     void selectNextTarget();
     void selectPreviousTarget();
+    FontMenuContext context_;
     std::string dir;
     std::vector<std::string> files;
     std::vector<Button *> targetButtons;
