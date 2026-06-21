@@ -46,11 +46,6 @@ static int ClampLineSpacingSetting(int value) {
 
 }
 
-std::string Prefs::MakeBookKey(const char *folder, const char *filename) {
-  return std::string(folder ? folder : "") + "\n" +
-         std::string(filename ? filename : "");
-}
-
 namespace xml::prefs {
 
 static bool MatchesBookFilename(const char *book_filename,
@@ -226,6 +221,7 @@ void start(void *data, const XML_Char *name, const XML_Char **attr) {
           style_font_size, style_line_spacing,
           style_paragraph_spacing, style_publisher_text_indent,
           style_publisher_block_margins, last_opened);
+      p->prefs->BeginSavedBookBookmarks(folder, filename);
     }
 
     // Find the book index for this library entry and set parsing context.
@@ -286,6 +282,8 @@ void start(void *data, const XML_Char *name, const XML_Char **attr) {
     } else if (p->prefs) {
       p->prefs->AddPendingCurrentBookBookmark(position - 1);
     }
+    if (p->prefs && position > 0)
+      p->prefs->RememberSavedBookBookmark(position - 1);
   } else if (!strcmp(name, "margin")) {
     for (i = 0; attr[i]; i += 2) {
       if (!strcmp(attr[i], "left"))
@@ -332,6 +330,8 @@ void end(void *data, const char *name) {
   //! Exit element callback for the prefs file.
   parsedata_t *p = (parsedata_t *)data;
   if (!strcmp(name, "book")) {
+    if (p->prefs)
+      p->prefs->EndSavedBookBookmarks();
     p->book = NULL;
     if (p->prefs)
       p->prefs->EndPendingCurrentBookRestoreEntry();
@@ -519,22 +519,35 @@ void Prefs::RememberSavedBookState(
   state.style_publisher_text_indent = style_publisher_text_indent;
   state.style_publisher_block_margins = style_publisher_block_margins;
   state.last_opened = last_opened;
-  saved_state_by_book_key[MakeBookKey(folder, filename)] = state;
+  ::RememberSavedBookState(&saved_state_by_book_key, folder, filename, state);
 }
+
+void Prefs::BeginSavedBookBookmarks(const char *folder, const char *filename) {
+  saved_bookmarks_key = MakeSavedBookKey(folder, filename);
+}
+
+void Prefs::RememberSavedBookBookmark(uint16_t page) {
+  SavedBookStateMap::iterator it =
+      saved_state_by_book_key.find(saved_bookmarks_key);
+  if (!saved_bookmarks_key.empty() && it != saved_state_by_book_key.end())
+    it->second.bookmarks.push_back(page);
+}
+
+void Prefs::EndSavedBookBookmarks() { saved_bookmarks_key.clear(); }
 
 void Prefs::RememberSavedLastOpened(const char *folder, const char *filename,
                                     uint32_t last_opened) {
   if (!filename || !filename[0] || last_opened == 0)
     return;
-  last_opened_by_book_key[MakeBookKey(folder, filename)] = last_opened;
+  last_opened_by_book_key[MakeSavedBookKey(folder, filename)] = last_opened;
 }
 
 void Prefs::ApplySavedBookState(Book *book) const {
   if (!book)
     return;
   const auto state_it =
-      saved_state_by_book_key.find(MakeBookKey(book->GetFolderName(),
-                                               book->GetFileName()));
+      saved_state_by_book_key.find(MakeSavedBookKey(book->GetFolderName(),
+                                                    book->GetFileName()));
   if (state_it != saved_state_by_book_key.end()) {
     const SavedBookState &state = state_it->second;
     book->SetMobiLineWrapFix(state.mobi_line_wrap_fix);
@@ -548,11 +561,13 @@ void Prefs::ApplySavedBookState(Book *book) const {
       book->SetPosition(state.position - 1);
     if (state.last_opened > 0)
       book->SetLastOpenedTime(state.last_opened);
+    for (size_t i = 0; i < state.bookmarks.size(); i++)
+      book->GetBookmarks().push_back(state.bookmarks[i]);
   }
 
   const auto it =
-      last_opened_by_book_key.find(MakeBookKey(book->GetFolderName(),
-                                               book->GetFileName()));
+      last_opened_by_book_key.find(MakeSavedBookKey(book->GetFolderName(),
+                                                    book->GetFileName()));
   if (it != last_opened_by_book_key.end())
     book->SetLastOpenedTime(it->second);
 }
@@ -646,56 +661,81 @@ int Prefs::Write() {
           app->publisher_block_margins ? 1 : 0);
   fprintf(fp, "\t<books reopen=\"%d\">\n", app->reopen);
 
-  // Persist all known books so last page and bookmarks survive restarts.
+  // Merge the visible folder into the complete state loaded from disk. Browser
+  // navigation replaces app->books, so serializing that vector directly would
+  // erase progress for every folder that is not currently visible.
+  std::string current_book_key;
   for (int i = 0; i < app->BookCount(); i++) {
     Book *book = app->books[i];
     if (!book || book->IsBrowserFolder())
       continue;
-    const std::string escaped_filename = XmlEscapeAttr(book->GetFileName());
-    const std::string escaped_folder = XmlEscapeAttr(book->GetFolderName());
+    SavedBookState state;
+    state.position = book->GetPosition() + 1;
+    state.mobi_line_wrap_fix = book->GetMobiLineWrapFix();
+    state.style_font_size = book->GetStyleFontSizeOverride();
+    state.style_line_spacing = book->GetStyleLineSpacingOverride();
+    state.style_paragraph_spacing = book->GetStyleParagraphSpacingOverride();
+    state.style_publisher_text_indent =
+        book->GetStylePublisherTextIndentOverride();
+    state.style_publisher_block_margins =
+        book->GetStylePublisherBlockMarginsOverride();
+    state.last_opened = book->GetLastOpenedTime();
+    const std::list<u16> &bookmarks = book->GetBookmarks();
+    for (std::list<u16>::const_iterator j = bookmarks.begin();
+         j != bookmarks.end(); ++j)
+      state.bookmarks.push_back(*j);
+    ::RememberSavedBookState(&saved_state_by_book_key, book->GetFolderName(),
+                             book->GetFileName(), state);
+    if (app->GetCurrentBook() == book)
+      current_book_key =
+          MakeSavedBookKey(book->GetFolderName(), book->GetFileName());
+  }
+
+  for (SavedBookStateMap::const_iterator it = saved_state_by_book_key.begin();
+       it != saved_state_by_book_key.end(); ++it) {
+    std::string folder;
+    std::string filename;
+    if (!SplitSavedBookKey(it->first, &folder, &filename))
+      continue;
+    const SavedBookState &state = it->second;
+    const std::string escaped_filename = XmlEscapeAttr(filename.c_str());
+    const std::string escaped_folder = XmlEscapeAttr(folder.c_str());
     fprintf(fp, "\t\t<book file=\"%s\" folder=\"%s\" page=\"%d\"",
             escaped_filename.c_str(), escaped_folder.c_str(),
-            book->GetPosition() + 1);
+            state.position);
     // Only persist the override when enabled so old prefs stay readable.
-    if (book->GetMobiLineWrapFix())
+    if (state.mobi_line_wrap_fix)
       fprintf(fp, " mobiLineWrapFix=\"1\"");
-    if (book->GetStyleFontSizeOverride() >= 0)
-      fprintf(fp, " fontSize=\"%d\"",
-              book->GetStyleFontSizeOverride());
-    if (book->GetStyleLineSpacingOverride() >= 0)
-      fprintf(fp, " lineSpacing=\"%d\"",
-              book->GetStyleLineSpacingOverride());
-    if (book->GetStyleParagraphSpacingOverride() >= 0)
-      fprintf(fp, " paragraphSpacing=\"%d\"",
-              book->GetStyleParagraphSpacingOverride());
-    if (book->GetStylePublisherTextIndentOverride() >= 0)
+    if (state.style_font_size >= 0)
+      fprintf(fp, " fontSize=\"%d\"", state.style_font_size);
+    if (state.style_line_spacing >= 0)
+      fprintf(fp, " lineSpacing=\"%d\"", state.style_line_spacing);
+    if (state.style_paragraph_spacing >= 0)
+      fprintf(fp, " paragraphSpacing=\"%d\"", state.style_paragraph_spacing);
+    if (state.style_publisher_text_indent >= 0)
       fprintf(fp, " publisherTextIndent=\"%d\"",
-              book->GetStylePublisherTextIndentOverride());
-    if (book->GetStylePublisherBlockMarginsOverride() >= 0)
+              state.style_publisher_text_indent);
+    if (state.style_publisher_block_margins >= 0)
       fprintf(fp, " publisherBlockMargins=\"%d\"",
-              book->GetStylePublisherBlockMarginsOverride());
-    if (book->GetLastOpenedTime() > 0) {
-      fprintf(fp, " lastOpened=\"%lu\"", (unsigned long)book->GetLastOpenedTime());
+              state.style_publisher_block_margins);
+    if (state.last_opened > 0) {
+      fprintf(fp, " lastOpened=\"%lu\"", (unsigned long)state.last_opened);
       DBG_LOGF(app, "recently-opened: write lastOpened=%lu for \"%s\"",
-               (unsigned long)book->GetLastOpenedTime(),
-               book->GetFileName() ? book->GetFileName() : "?");
+               (unsigned long)state.last_opened, filename.c_str());
     }
-    if (app->GetCurrentBook() == app->books[i])
+    if (it->first == current_book_key)
       fprintf(fp, " current=\"1\"");
 #ifdef DSLIBRIS_DEBUG
-    if (app->GetCurrentBook() == app->books[i]) {
+    if (it->first == current_book_key) {
       DBG_LOGF(app,
-               "PROGRESS write current book=%s pos=%d page=%d/%d",
-               book->GetFileName() ? book->GetFileName() : "",
-               book->GetPosition(), book->GetPosition() + 1,
-               book->GetPageCount());
+               "PROGRESS write current book=%s page=%d",
+               filename.c_str(), state.position);
     }
 #endif
     fprintf(fp, ">\n");
-    std::list<u16> &bookmarks = book->GetBookmarks();
-    for (std::list<u16>::iterator j = bookmarks.begin(); j != bookmarks.end();
-         j++) {
-      fprintf(fp, "\t\t\t<bookmark page=\"%d\" word=\"%d\" />\n", *j + 1, 0);
+    for (size_t j = 0; j < state.bookmarks.size(); ++j) {
+      fprintf(fp, "\t\t\t<bookmark page=\"%d\" word=\"%d\" />\n",
+              state.bookmarks[j] + 1, 0);
     }
 
     fprintf(fp, "\t\t</book>\n");
@@ -706,16 +746,6 @@ int Prefs::Write() {
   fprintf(fp, "</dslibris>\n");
   fprintf(fp, "\n");
   fclose(fp);
-
-  last_opened_by_book_key.clear();
-  for (int i = 0; i < app->BookCount(); i++) {
-    Book *book = app->books[i];
-    if (!book || book->IsBrowserFolder() || book->GetLastOpenedTime() == 0)
-      continue;
-    last_opened_by_book_key[MakeBookKey(book->GetFolderName(),
-                                        book->GetFileName())] =
-        book->GetLastOpenedTime();
-  }
 
   return err;
 }
