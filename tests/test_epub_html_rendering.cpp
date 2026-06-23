@@ -77,6 +77,43 @@ int LineStartXBefore(const u32 *buf, int len, u32 codepoint) {
   return -1;
 }
 
+std::string ExtractVisibleAsciiFromPages(Book &book) {
+  std::string out;
+  for (int page_index = 0; page_index < book.GetPageCount(); page_index++) {
+    Page *page = book.GetPage(page_index);
+    if (!page)
+      continue;
+    const u32 *buf = page->GetBuffer();
+    const int len = page->GetLength();
+    for (int i = 0; i < len; i++) {
+      const u32 c = buf[i];
+      if (c == TEXT_LINE_START_X || c == TEXT_RTL_LINE_PX ||
+          c == TEXT_FONT_SIZE || c == TEXT_LINK_START ||
+          c == TEXT_IMAGE || c == TEXT_IMAGE_ALIGN ||
+          c == TEXT_IMAGE_AUTHOR_WIDTH) {
+        i++;
+        continue;
+      }
+      if (c == TEXT_PARAGRAPH_RTL || c == TEXT_PARAGRAPH_LTR ||
+          c == TEXT_PARAGRAPH_LEFT || c == TEXT_PARAGRAPH_CENTER ||
+          c == TEXT_PARAGRAPH_RIGHT || c == TEXT_SCREEN_BREAK ||
+          c == TEXT_BOLD_ON || c == TEXT_BOLD_OFF ||
+          c == TEXT_ITALIC_ON || c == TEXT_ITALIC_OFF ||
+          c == TEXT_UNDERLINE_ON || c == TEXT_UNDERLINE_OFF ||
+          c == TEXT_PRE_ON || c == TEXT_PRE_OFF ||
+          c == TEXT_MONO_ON || c == TEXT_MONO_OFF ||
+          c == TEXT_LINK_END || c == TEXT_IMAGE_CONTEXT_DEFAULT ||
+          c == TEXT_IMAGE_LEADING_PARAGRAPH ||
+          c == TEXT_IMAGE_FIGURE_WITH_CAPTION) {
+        continue;
+      }
+      if (c >= 32 && c < 127)
+        out.push_back((char)c);
+    }
+  }
+  return out;
+}
+
 int TestMeasureCodepoint(uint32_t codepoint, void *) {
   return codepoint == ' ' ? 4 : 7;
 }
@@ -1068,6 +1105,40 @@ void TestPageBreakBeforeAlwaysUsesHardBreak() {
   ExpectTrue("hard-break: creates second logical page", book.GetPageCount() >= 2);
 }
 
+void TestLargeFontPaginationDoesNotDropTextAcrossPages() {
+  TestCtx tc;
+  tc.text.SetPixelSize(20);
+  tc.text.linespacing = 2;
+  tc.paragraph_spacing = 0;
+  Book book(tc.ctx);
+  parsedata_t p = MakeParseData(tc, book);
+  xml_parse_utils::XmlParserOptions opts = MakeXmlOpts(&p);
+
+  std::string expected;
+  std::string html = "<html><body><p>";
+  for (int i = 0; i < 220; i++) {
+    char word[32];
+    snprintf(word, sizeof(word), "w%03d", i);
+    if (i > 0) {
+      html += " ";
+      expected += " ";
+    }
+    html += word;
+    expected += word;
+  }
+  html += "</p></body></html>";
+
+  const xml_parse_utils::XmlParseResult r =
+      xml_parse_utils::ParseXmlString(html, opts);
+  ExpectTrue("large-font-continuity: parse ok", r.ok);
+  ExpectTrue("large-font-continuity: spans multiple pages",
+             book.GetPageCount() > 1);
+
+  const std::string actual = ExtractVisibleAsciiFromPages(book);
+  ExpectTrue("large-font-continuity: all text preserved",
+             actual.find(expected) != std::string::npos);
+}
+
 } // namespace
 
 int main() {
@@ -1094,6 +1165,7 @@ int main() {
   TestBodyTextIndentIsInheritedAndClassZeroOverrides();
   TestImageOnlyParagraphKeepsExplicitBottomMargin();
   TestPageBreakBeforeAlwaysUsesHardBreak();
+  TestLargeFontPaginationDoesNotDropTextAcrossPages();
   printf("PASS: %d tests\n", g_pass);
   return 0;
 }

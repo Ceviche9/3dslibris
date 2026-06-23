@@ -522,7 +522,9 @@ void EmitFlowedFragmentRaw(parsedata_t *p, const char *txt, int txtlen,
                 text_render_layout_utils::ResolveCompactReadingBottomMargin(
                     ts->margin.bottom));
         emit_metrics.screen_max_height_by_screen[s] = sm.max_height;
-        emit_metrics.screen_bottom_margin_by_screen[s] = sm.bottom_margin;
+        emit_metrics.screen_bottom_margin_by_screen[s] =
+            text_render_layout_utils::ApplyLineHeightPaginationGuard(
+                sm.bottom_margin, lineheight);
       }
       emit_metrics.display_width =
           emit_metrics.screen_width_by_screen[(p->screen >= 0 && p->screen < 2)
@@ -633,12 +635,15 @@ void EmitFlowedFragmentRaw(parsedata_t *p, const char *txt, int txtlen,
               text_render_layout_utils::ResolveReadingScreenMetricsForOrientation(
                   p->book->GetOrientation(), p->screen, ts->margin.bottom,
                   text_render_layout_utils::ResolveCompactReadingBottomMargin(ts->margin.bottom));
+          const int bottom_margin =
+              text_render_layout_utils::ApplyLineHeightPaginationGuard(
+                  sm.bottom_margin, lh);
           const bool slot1 =
               text_render_layout_utils::CurrentLineFitsScreen(
-                  p->pen.y, lh, ls, sm.max_height, sm.bottom_margin);
+                  p->pen.y, lh, ls, sm.max_height, bottom_margin);
           const bool slot2 =
               text_render_layout_utils::HasRoomForFollowingLine(
-                  p->pen.y, lh, ls, sm.max_height, sm.bottom_margin);
+                  p->pen.y, lh, ls, sm.max_height, bottom_margin);
           bool one_line_paragraph = false;
           if (slot1 && !slot2 && IsSimpleParagraphTextFlush(p)) {
             one_line_paragraph = FlowedTextFitsCurrentVisualLine(
@@ -685,9 +690,12 @@ void EmitFlowedFragmentRaw(parsedata_t *p, const char *txt, int txtlen,
         text_render_layout_utils::ResolveReadingScreenMetricsForOrientation(
             p->book->GetOrientation(), p->screen, ts->margin.bottom,
             text_render_layout_utils::ResolveCompactReadingBottomMargin(ts->margin.bottom));
-    emit_metrics.overflow_threshold = sm.max_height - sm.bottom_margin;
     emit_metrics.screen_max_height = sm.max_height;
-    emit_metrics.screen_bottom_margin = sm.bottom_margin;
+    emit_metrics.screen_bottom_margin =
+        text_render_layout_utils::ApplyLineHeightPaginationGuard(
+            sm.bottom_margin, lineheight);
+    emit_metrics.overflow_threshold =
+        sm.max_height - emit_metrics.screen_bottom_margin;
   }
 
   if (white_space == book_xml_css_style_utils::WhiteSpaceMode::Pre ||

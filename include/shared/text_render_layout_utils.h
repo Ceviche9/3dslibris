@@ -24,6 +24,17 @@ struct ReadingScreenMetrics {
   int bottom_margin;
 };
 
+inline int ResolvePaginationSafetyGuard(int line_height) {
+  return std::max(kFullReadingScreenFooterGuardPx, line_height / 2);
+}
+
+inline int ApplyLineHeightPaginationGuard(int guarded_bottom_margin,
+                                          int line_height) {
+  return guarded_bottom_margin +
+         (ResolvePaginationSafetyGuard(line_height) -
+          kFullReadingScreenFooterGuardPx);
+}
+
 inline int ComputeRtlLineStartX(int margin_left, int content_right,
                                 int line_width) {
   const int x = content_right - std::max(0, line_width);

@@ -394,6 +394,15 @@ void TestBottomSafeAreaRendererClipAboveOverflowThreshold() {
              edge_pen_y + conservative_descent < clip_boundary);
 }
 
+void TestPaginationGuardScalesForLargeFonts() {
+  ExpectEq("small fonts keep legacy guard",
+           text_render_layout_utils::ResolvePaginationSafetyGuard(12),
+           text_render_layout_utils::kFullReadingScreenFooterGuardPx);
+  ExpectTrue("large fonts reserve descender-safe guard",
+             text_render_layout_utils::ResolvePaginationSafetyGuard(24) >
+                 text_render_layout_utils::kFullReadingScreenFooterGuardPx);
+}
+
 } // namespace
 
 int main() {
@@ -416,5 +425,6 @@ int main() {
   TestCurrentLineFitAllowsVisualLastLineWithoutFollowingRoom();
   TestBandImageAdvanceKeepsLastVisibleBaseline();
   TestBottomSafeAreaRendererClipAboveOverflowThreshold();
+  TestPaginationGuardScalesForLargeFonts();
   return 0;
 }

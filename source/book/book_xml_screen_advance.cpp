@@ -120,7 +120,9 @@ void AdvanceParsedPageOnOverflow(parsedata_t *p, int lineheight) {
           p->book->GetOrientation(), p->screen, leftBottomMargin,
           rightBottomMargin);
   int maxHeight = metrics.max_height;
-  int bottomMargin = metrics.bottom_margin;
+  int bottomMargin =
+      text_render_layout_utils::ApplyLineHeightPaginationGuard(
+          metrics.bottom_margin, lineheight);
   if (!text_render_layout_utils::CurrentLineBeyondReadingScreen(
           p->pen.y, maxHeight, bottomMargin))
     return;
@@ -372,12 +374,15 @@ void FlushPendingBlockSpacingBeforeContent(parsedata_t *p,
   int screen_limit = 0;
   int usable = 0;
   {
-    screen_limit = metrics.max_height - metrics.bottom_margin;
+    const int effective_bottom_margin =
+        text_render_layout_utils::ApplyLineHeightPaginationGuard(
+            metrics.bottom_margin, lh);
+    screen_limit = metrics.max_height - effective_bottom_margin;
     usable = screen_limit - p->pen.y;
     floor_available = CountFloorLineSlots(p->pen.y, metrics.max_height,
-                                          metrics.bottom_margin, line_step);
+                                          effective_bottom_margin, line_step);
     available = CountRenderableLineSlots(p->pen.y, metrics.max_height,
-                                         metrics.bottom_margin, line_step);
+                                         effective_bottom_margin, line_step);
 #if defined(DSLIBRIS_DEBUG) && FLUSHPENDING_TRACE
     DBG_LOGF(p->book->GetStatusReporter(),
       "FlushPending METRICS lh=%d ls=%d step=%d maxH=%d botM=%d limit=%d usable=%d floor_avail=%d slots=%d lb=%d reason=%s",
@@ -418,16 +423,19 @@ void FlushPendingBlockSpacingBeforeContent(parsedata_t *p,
                 ts->margin.bottom,
                 text_render_layout_utils::ResolveCompactReadingBottomMargin(ts->margin.bottom));
 
+        const int after_bottom_margin =
+            text_render_layout_utils::ApplyLineHeightPaginationGuard(
+                after_metrics.bottom_margin, lh);
         const int usable_after =
-            after_metrics.max_height - after_metrics.bottom_margin - p->pen.y;
+            after_metrics.max_height - after_bottom_margin - p->pen.y;
         (void)usable_after;
-        screen_limit = after_metrics.max_height - after_metrics.bottom_margin;
+        screen_limit = after_metrics.max_height - after_bottom_margin;
         usable = screen_limit - p->pen.y;
         floor_available = CountFloorLineSlots(p->pen.y, after_metrics.max_height,
-                                              after_metrics.bottom_margin,
+                                              after_bottom_margin,
                                               line_step);
         available = CountRenderableLineSlots(p->pen.y, after_metrics.max_height,
-                                             after_metrics.bottom_margin,
+                                             after_bottom_margin,
                                              line_step);
       }
     }
@@ -473,16 +481,19 @@ void FlushPendingBlockSpacingBeforeContent(parsedata_t *p,
               p->book->GetOrientation(), p->screen, ts->margin.bottom,
               text_render_layout_utils::ResolveCompactReadingBottomMargin(
                   ts->margin.bottom));
+      const int after_bottom_margin =
+          text_render_layout_utils::ApplyLineHeightPaginationGuard(
+              after_metrics.bottom_margin, lh);
       const int usable_after =
-          after_metrics.max_height - after_metrics.bottom_margin - p->pen.y;
+          after_metrics.max_height - after_bottom_margin - p->pen.y;
       (void)usable_after;
-      screen_limit = after_metrics.max_height - after_metrics.bottom_margin;
+      screen_limit = after_metrics.max_height - after_bottom_margin;
       usable = screen_limit - p->pen.y;
       floor_available = CountFloorLineSlots(p->pen.y, after_metrics.max_height,
-                                            after_metrics.bottom_margin,
+                                            after_bottom_margin,
                                             line_step);
       available = CountRenderableLineSlots(p->pen.y, after_metrics.max_height,
-                                           after_metrics.bottom_margin,
+                                           after_bottom_margin,
                                            line_step);
       emit_opt = 0;
     }
