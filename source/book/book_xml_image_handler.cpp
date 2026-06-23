@@ -361,6 +361,7 @@ void HandleInlineImageStart(parsedata_t *p, Text *ts, const char **attr,
     case INLINE_IMAGE_LAYOUT_BAND:
       if (p->in_paragraph && leading_paragraph_image) {
         p->paragraph_has_standalone_band_image = true;
+        p->paragraph_has_decorative_band_image = decorative_leading_band;
       } else if (p->in_paragraph && !decorative_leading_band) {
         p->paragraph_has_content = true;
       }

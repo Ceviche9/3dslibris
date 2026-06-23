@@ -86,6 +86,7 @@ struct parsedata_t {
 	bool in_paragraph;
 	bool paragraph_has_content;
 	bool paragraph_has_standalone_band_image;
+	bool paragraph_has_decorative_band_image;
 	bool last_block_was_standalone_band_image;
 	bool bold;
 	bool italic;
@@ -169,6 +170,7 @@ struct parsedata_t {
 	std::string last_h_style;    //! style= attr of the most-recently-opened <h3..h6>.
 	std::string last_hr_style;   //! style= attr of the most-recently-opened <hr>.
 	std::string last_div_style;
+	std::string last_body_style;
 	std::string last_aside_style;
 	std::string last_blockquote_style;
 	std::string last_figure_style;
@@ -180,6 +182,7 @@ struct parsedata_t {
 	std::string last_h_class;
 	std::string last_hr_class;
 	std::string last_div_class;
+	std::string last_body_class;
 	std::string last_aside_class;
 	std::string last_blockquote_class;
 	std::string last_figure_class;

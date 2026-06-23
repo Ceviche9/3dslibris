@@ -13,8 +13,8 @@
  *   debug_log::SetLevel(...)
  *   debug_log::SetCategories(...)
  *
- * The first argument of log macros must be a pointer to any object that has
- * PrintStatus(const char*) (e.g. IStatusReporter*, App*).
+ * The first argument of log macros must be an IStatusReporter pointer.
+ * App satisfies this through IStatusReporter inheritance.
  */
 
 #pragma once

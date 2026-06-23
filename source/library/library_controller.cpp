@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "library/library_sort_mode.h"
+#include "library/cover_override_utils.h"
 #include "settings/prefs.h"
 
 // Forward declared from app_book.cpp
@@ -23,11 +24,11 @@ void DrawOpeningSplashWithProgress(unsigned done, unsigned total,
 #include "ui/gradient_utils.h"
 #include "book/book_context.h"
 #include "shared/debug_log.h"
+#include "shared/cover_decode_utils.h"
+#include "formats/common/file_read_utils.h"
 #include "shared/path_constants.h"
 #include "shared/app_flow_utils.h"
-#include "shared/stb_image_gif_utils.h"
 #include "shared/utf8_utils.h"
-#include "stb_image.h"
 
 #ifndef UTF8_FILENAME_DIAG
 #define UTF8_FILENAME_DIAG 0
@@ -395,70 +396,13 @@ static bool DirectoryHasDirectSupportedBook(const std::string &dir) {
 static void TryLoadFolderCover(Book *book) {
   if (!book || book->GetBrowserFolderCoverPath().empty())
     return;
-  FILE *fp = fopen(book->GetBrowserFolderCoverPath().c_str(), "rb");
-  if (!fp)
-    return;
-  if (fseek(fp, 0, SEEK_END) != 0) {
-    fclose(fp);
-    return;
+  std::string bytes;
+  if (file_read_utils::ReadPathToStringLimited(
+          book->GetBrowserFolderCoverPath(), &bytes, 4u * 1024u * 1024u) &&
+      cover_decode_utils::DecodeImageToCoverThumb(
+          book, (const unsigned char *)bytes.data(), bytes.size(), 4096)) {
+    book->coverAttempts = 3;
   }
-  long size = ftell(fp);
-  if (size <= 0 || size > 4 * 1024 * 1024) {
-    fclose(fp);
-    return;
-  }
-  rewind(fp);
-  std::vector<unsigned char> compressed((size_t)size);
-  if (fread(compressed.data(), 1, compressed.size(), fp) !=
-      compressed.size()) {
-    fclose(fp);
-    return;
-  }
-  fclose(fp);
-
-  int w = 0, h = 0, comp = 0;
-  unsigned char *pixels = stb_image_gif_utils::LoadFromMemory(
-      compressed.data(), (int)compressed.size(), &w, &h, &comp, 3);
-  if (!pixels || w <= 0 || h <= 0) {
-    if (pixels)
-      stbi_image_free(pixels);
-    return;
-  }
-  const int max_w = 85;
-  const int max_h = 115;
-  int draw_w = w;
-  int draw_h = h;
-  if (draw_w > max_w || draw_h > max_h) {
-    float scale_w = (float)max_w / (float)w;
-    float scale_h = (float)max_h / (float)h;
-    float scale = scale_w < scale_h ? scale_w : scale_h;
-    draw_w = std::max(1, (int)(w * scale));
-    draw_h = std::max(1, (int)(h * scale));
-  }
-  u16 *thumb = new u16[(size_t)draw_w * (size_t)draw_h];
-  if (!thumb) {
-    stbi_image_free(pixels);
-    return;
-  }
-  for (int y = 0; y < draw_h; y++) {
-    int sy = (int)((long long)y * (long long)h / (long long)draw_h);
-    for (int x = 0; x < draw_w; x++) {
-      int sx = (int)((long long)x * (long long)w / (long long)draw_w);
-      unsigned char *p = pixels + ((size_t)sy * (size_t)w + (size_t)sx) * 3;
-      u16 r = (u16)(p[0] >> 3);
-      u16 g = (u16)(p[1] >> 2);
-      u16 b = (u16)(p[2] >> 3);
-      thumb[(size_t)y * (size_t)draw_w + (size_t)x] =
-          (u16)((r << 11) | (g << 5) | b);
-    }
-  }
-  stbi_image_free(pixels);
-  if (book->coverPixels)
-    delete[] book->coverPixels;
-  book->coverPixels = thumb;
-  book->coverWidth = draw_w;
-  book->coverHeight = draw_h;
-  book->coverAttempts = 3;
 }
 
 static void AppendFolderEntry(App *app, const std::string &source_dir,
@@ -489,9 +433,15 @@ static void AppendFolderEntry(App *app, const std::string &source_dir,
   ctx.on_spine_progress = &DrawOpeningSplashWithProgress;
   ctx.on_spine_progress_user_data = app;
 
-  std::string cover_path = source_dir + "/" + folder_name + ".jpg";
-  if (!PathIsRegularFile(cover_path))
-    cover_path.clear();
+  std::string cover_path;
+  const std::vector<std::string> cover_candidates =
+      cover_override_utils::BuildStemCandidates(source_dir + "/" + folder_name);
+  for (size_t i = 0; i < cover_candidates.size(); ++i) {
+    if (PathIsRegularFile(cover_candidates[i])) {
+      cover_path = cover_candidates[i];
+      break;
+    }
+  }
   Book *folder = new Book(ctx);
   folder->SetBrowserFolderEntry(folder_path, folder_name, cover_path);
   TryLoadFolderCover(folder);
@@ -925,7 +875,9 @@ bool LibraryController::IsInsideFolder() const { return inside_folder_; }
 
 void App::browser_draw() { library_controller_->browser_draw(); }
 
-void App::browser_handleevent() { library_controller_->browser_handleevent(); }
+void App::browser_handleevent(const FrameInput &input) {
+  library_controller_->browser_handleevent(input);
+}
 
 void App::browser_init() { library_controller_->browser_init(); }
 

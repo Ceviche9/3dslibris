@@ -3,6 +3,55 @@
 #include "test_assert.h"
 
 int main() {
+  settings::PrefsPageContext page;
+  page.from_book = false;
+  page.page = 0;
+  page.fixed_layout = false;
+  page.include_line_wrap_fix = false;
+  test::ExpectEq("unified general page 1 count",
+                 settings::PrefsPageButtonCount(page), 6);
+  test::ExpectEq("unified general page 1 first button",
+                 settings::PrefsPageButtonForSlot(page, 0),
+                 PREFS_BUTTON_STYLE_CUSTOMIZATION);
+
+  page.page = 1;
+  test::ExpectEq("unified general style page count",
+                 settings::PrefsPageButtonCount(page), 6);
+  test::ExpectEq("unified general style page first button",
+                 settings::PrefsPageButtonForSlot(page, 0),
+                 PREFS_BUTTON_FONT_CONFIG);
+
+  page.page = 2;
+  test::ExpectEq("unified general options page count",
+                 settings::PrefsPageButtonCount(page), 6);
+  test::ExpectEq("unified general options page first button",
+                 settings::PrefsPageButtonForSlot(page, 0),
+                 PREFS_BUTTON_ORIENTATION);
+
+  page.from_book = true;
+  page.page = 0;
+  page.include_line_wrap_fix = true;
+  test::ExpectEq("unified MOBI page 1 count",
+                 settings::PrefsPageButtonCount(page), 7);
+  test::ExpectEq("unified MOBI line wrap slot",
+                 settings::PrefsPageButtonForSlot(page, 1),
+                 PREFS_BUTTON_LIBRARY_VIEW);
+
+  page.page = 1;
+  page.fixed_layout = false;
+  test::ExpectEq("unified reflow style page count",
+                 settings::PrefsPageButtonCount(page), 7);
+  test::ExpectEq("unified reflow style page last button",
+                 settings::PrefsPageButtonForSlot(page, 6),
+                 PREFS_BUTTON_PUBLISHER_BLOCK_MARGINS);
+
+  page.fixed_layout = true;
+  test::ExpectEq("unified fixed-layout page 2 count",
+                 settings::PrefsPageButtonCount(page), 3);
+  test::ExpectEq("unified fixed-layout reading direction",
+                 settings::PrefsPageButtonForSlot(page, 2),
+                 PREFS_BUTTON_LIBRARY_VIEW);
+
   test::ExpectEq("general visible count",
                  settings::VisiblePrefsButtonCount(false, false), 6);
   test::ExpectEq("reflow book page 1 count",

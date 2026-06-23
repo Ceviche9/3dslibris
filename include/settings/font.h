@@ -17,6 +17,7 @@
 #include <vector>
 #include "ui/button.h"
 #include "menus/menu.h"
+#include "settings/font_menu_context.h"
 #include "ui/text.h"
 
 enum class AppMode : u8;
@@ -24,13 +25,14 @@ enum class AppMode : u8;
 class FontMenu : public Menu {
 public:
     FontMenu(App* app);
+    explicit FontMenu(const FontMenuContext &context);
     ~FontMenu();
     void Open(AppMode requested_mode);
     void draw();
     void Draw() override { draw(); } // Override to use the draw method
-    void HandleInput(u32 keys) override { handleInput(keys); }
+    void HandleInput(const FrameInput &input) override { handleInput(input); }
     inline const std::vector<std::string>& getFiles() const { return files; }
-    void handleInput(u32 keys);
+    void handleInput(const FrameInput &input);
     inline bool isDirty() const { return dirty; }
     inline void setDirty(bool d = true) { dirty = d; }
 private:
@@ -43,12 +45,12 @@ private:
     void refreshTargetButtons();
     void enterTargetView(u8 requested_target);
     void enterFileView();
-    void handleTargetInput(u32 keys);
-    void handleFileInput(u32 keys);
-    void handleTargetTouchInput();
+    void handleTargetInput(const FrameInput &input);
+    void handleFileInput(const FrameInput &input);
+    void handleTargetTouchInput(const FrameInput &input);
     void handleButtonPress();
     void LayoutFileButtons();
-    void handleFileTouchInput();
+    void handleFileTouchInput(const FrameInput &input);
     void nextTargetPage();
     void previousTargetPage();
     u8 getTargetPageCount() const;
@@ -62,6 +64,7 @@ private:
     void selectPrevious();
     void selectNextTarget();
     void selectPreviousTarget();
+    FontMenuContext context_;
     std::string dir;
     std::vector<std::string> files;
     std::vector<Button *> targetButtons;

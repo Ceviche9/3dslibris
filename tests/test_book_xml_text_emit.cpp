@@ -567,7 +567,7 @@ void TestBeyondLastVisibleLineAdvances() {
              ctx.fired);
 }
 
-void TestContinuationWrapUsesVisualLastLineWhenMetricsAvailable() {
+void TestContinuationWrapDoesNotUseCompactClipGuard() {
   parsedata_t p{};
   parse_init(&p);
   p.pen.x = 200;
@@ -593,9 +593,9 @@ void TestContinuationWrapUsesVisualLastLineWhenMetricsAvailable() {
       &p, text, run, has_rtl, std::vector<text_bidi_utils::BidiRun>(),
       m, MockAdvancePage, &ctx);
 
-  ExpectTrue("advance not fired for visually fitting continuation line",
-             !ctx.fired);
-  ExpectEq("wrapped continuation uses compact bleed line", p.pen.y, 306);
+  ExpectTrue("advance fired before compact clip guard", ctx.fired);
+  ExpectEq("wrapped continuation starts on fresh screen", p.pen.y,
+           m.lineheight);
 }
 
 void TestContinuationWrapBeyondCompactBleedAdvances() {
@@ -796,7 +796,7 @@ int main() {
   // LTR wrap invariant: last visible line tests.
   TestLastVisibleLineIsUsed();
   TestBeyondLastVisibleLineAdvances();
-  TestContinuationWrapUsesVisualLastLineWhenMetricsAvailable();
+  TestContinuationWrapDoesNotUseCompactClipGuard();
   TestContinuationWrapBeyondCompactBleedAdvances();
   TestChapter19DeVueltaNotSplit();
   TestChapter11NintendoNotAdvanced();

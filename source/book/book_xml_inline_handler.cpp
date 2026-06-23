@@ -385,7 +385,9 @@ void SyncInlineStyleAfterPop(parsedata_t *p, Text *ts) {
               ts->margin.bottom));
   if (!text_render_layout_utils::CurrentLineFitsScreen(
         p->pen.y, ts->GetHeight(), ts->linespacing,
-        metrics.max_height, metrics.bottom_margin)) {
+        metrics.max_height,
+        text_render_layout_utils::ApplyLineHeightPaginationGuard(
+            metrics.bottom_margin, ts->GetHeight()))) {
     book_xml_screen_advance::AdvanceParsedScreen(p);
   }
 }

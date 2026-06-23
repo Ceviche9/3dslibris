@@ -65,6 +65,55 @@ int CountBufValue(const u32 *buf, int len, u32 value) {
   return count;
 }
 
+int LineStartXBefore(const u32 *buf, int len, u32 codepoint) {
+  int last_x = -1;
+  for (int i = 0; i < len; ++i) {
+    if (buf[i] == TEXT_LINE_START_X && i + 1 < len) {
+      last_x = (int)buf[++i];
+    } else if (buf[i] == codepoint) {
+      return last_x;
+    }
+  }
+  return -1;
+}
+
+std::string ExtractVisibleAsciiFromPages(Book &book) {
+  std::string out;
+  for (int page_index = 0; page_index < book.GetPageCount(); page_index++) {
+    Page *page = book.GetPage(page_index);
+    if (!page)
+      continue;
+    const u32 *buf = page->GetBuffer();
+    const int len = page->GetLength();
+    for (int i = 0; i < len; i++) {
+      const u32 c = buf[i];
+      if (c == TEXT_LINE_START_X || c == TEXT_RTL_LINE_PX ||
+          c == TEXT_FONT_SIZE || c == TEXT_LINK_START ||
+          c == TEXT_IMAGE || c == TEXT_IMAGE_ALIGN ||
+          c == TEXT_IMAGE_AUTHOR_WIDTH) {
+        i++;
+        continue;
+      }
+      if (c == TEXT_PARAGRAPH_RTL || c == TEXT_PARAGRAPH_LTR ||
+          c == TEXT_PARAGRAPH_LEFT || c == TEXT_PARAGRAPH_CENTER ||
+          c == TEXT_PARAGRAPH_RIGHT || c == TEXT_SCREEN_BREAK ||
+          c == TEXT_BOLD_ON || c == TEXT_BOLD_OFF ||
+          c == TEXT_ITALIC_ON || c == TEXT_ITALIC_OFF ||
+          c == TEXT_UNDERLINE_ON || c == TEXT_UNDERLINE_OFF ||
+          c == TEXT_PRE_ON || c == TEXT_PRE_OFF ||
+          c == TEXT_MONO_ON || c == TEXT_MONO_OFF ||
+          c == TEXT_LINK_END || c == TEXT_IMAGE_CONTEXT_DEFAULT ||
+          c == TEXT_IMAGE_LEADING_PARAGRAPH ||
+          c == TEXT_IMAGE_FIGURE_WITH_CAPTION) {
+        continue;
+      }
+      if (c >= 32 && c < 127)
+        out.push_back((char)c);
+    }
+  }
+  return out;
+}
+
 int TestMeasureCodepoint(uint32_t codepoint, void *) {
   return codepoint == ' ' ? 4 : 7;
 }
@@ -525,17 +574,21 @@ void TestCssTopSpacingKeepsRenderableSlotsAtKnownPens() {
     char label[96];
     snprintf(label, sizeof(label), "css-top-known-pen-%d: stays on screen",
              pens[i]);
-    ExpectIntEq(label, p.screen, 0);
-    if (pens[i] == 291 || pens[i] == 320 || pens[i] == 322 ||
-        pens[i] == 333) {
+    ExpectIntEq(label, p.screen, pens[i] == 346 ? 1 : 0);
+    if (pens[i] == 291 || pens[i] == 320 || pens[i] == 322) {
       snprintf(label, sizeof(label), "css-top-known-pen-%d: emits spacing",
                pens[i]);
       ExpectIntEq(label, p.pen.y, pens[i] + tc.text.GetHeight() +
                                       tc.text.linespacing);
-    } else if (pens[i] == 346) {
+    } else if (pens[i] == 333) {
       snprintf(label, sizeof(label), "css-top-known-pen-%d: collapses spacing",
                pens[i]);
       ExpectIntEq(label, p.pen.y, pens[i]);
+    } else if (pens[i] == 346) {
+      snprintf(label, sizeof(label), "css-top-known-pen-%d: advances safely",
+               pens[i]);
+      ExpectIntEq(label, p.pen.y,
+                  tc.text.margin.top + tc.text.GetHeight());
     }
   }
 }
@@ -955,6 +1008,85 @@ void TestBandImageSeparatorSequenceMatchesRenderedHeight() {
   ResetBookInlineImageStubState();
 }
 
+void TestBodyTextIndentIsInheritedAndClassZeroOverrides() {
+  TestCtx tc;
+  tc.paragraph_spacing = 0;
+  Book book(tc.ctx);
+  parsedata_t p = MakeParseData(tc, book);
+  const char *css = "body{text-indent:1.65em}.left{text-indent:0}";
+  epub_css_class_map::ParseCssIntoClassMap(css, strlen(css), &p.css_class_map);
+  xml_parse_utils::XmlParserOptions opts = MakeXmlOpts(&p);
+
+  const std::string html =
+      "<html><body><p class=\"left\">Alpha</p><p>Bravo</p></body></html>";
+  const xml_parse_utils::XmlParseResult r =
+      xml_parse_utils::ParseXmlString(html, opts);
+  ExpectTrue("body-indent: parse ok", r.ok);
+  ExpectTrue("body-indent: page produced", book.GetPageCount() > 0);
+
+  const u32 *buf = book.GetPage(0)->GetBuffer();
+  const int len = book.GetPage(0)->GetLength();
+  ExpectIntEq("body-indent: class zero keeps first paragraph flush",
+              LineStartXBefore(buf, len, 'A'), -1);
+  ExpectTrue("body-indent: following paragraph inherits body indent",
+             LineStartXBefore(buf, len, 'B') > tc.text.margin.left);
+}
+
+void TestImageOnlyParagraphKeepsExplicitBottomMargin() {
+  TestCtx tc;
+  tc.paragraph_spacing = 0;
+  Book book(tc.ctx);
+  parsedata_t p = MakeParseData(tc, book);
+  const char *css = ".artpgbrkabovespacebelow{margin-bottom:4em}";
+  epub_css_class_map::ParseCssIntoClassMap(css, strlen(css), &p.css_class_map);
+  p.docpath = "OEBPS/Text/prologue.xhtml";
+  p.screen = 0;
+  p.pen.x = tc.text.margin.left;
+  p.pen.y = 24;
+
+  InlineImageMetadata meta{};
+  meta.ok = true;
+  meta.width = 900;
+  meta.height = 240;
+  InlineImageLayoutPlan plan{};
+  plan.mode = INLINE_IMAGE_LAYOUT_BAND;
+  plan.draw_width = 216;
+  plan.draw_height = 58;
+  plan.vertical_space_after_draw = 58;
+  ConfigureBookInlineImageStub(meta, plan, true);
+
+  epub_css_class_map::CssClassMargins elem_css{};
+  elem_css.margin_bottom.unit =
+      book_xml_css_style_utils::MarginTopResult::Unit::Em;
+  elem_css.margin_bottom.value = 400;
+  const char *p_attr[] = {"class", "artpgbrkabovespacebelow", nullptr};
+  bool early = false;
+  book_xml_block_handler::HandleBlockElementStart(
+      &p, &tc.text, "p", p_attr, elem_css,
+      "artpgbrkabovespacebelow", &early);
+
+  ImageHandlerFns fns{};
+  fns.linefeed = [](parsedata_t *pd) { book_xml_screen_advance::Linefeed(pd); };
+  fns.advance_screen = [](parsedata_t *pd) {
+    book_xml_screen_advance::AdvanceParsedScreen(pd);
+  };
+  fns.advance_page_overflow = [](parsedata_t *pd, int lh) {
+    book_xml_screen_advance::AdvanceParsedPageOnOverflow(pd, lh);
+  };
+  fns.emit_chardata = [](parsedata_t *pd, const char *txt, int len) {
+    xml::book::chardata(pd, txt, len);
+  };
+  const char *img_attr[] = {"src", "../Images/prologue.jpg", nullptr};
+  HandleInlineImageStart(&p, &tc.text, img_attr, elem_css, fns);
+  book_xml_block_handler::HandleBlockElementEnd(&p, &tc.text, "p");
+
+  ExpectTrue("image-bottom-margin: queues explicit spacing",
+             p.pending_block_spacing_from_css);
+  ExpectTrue("image-bottom-margin: keeps substantial 4em gap",
+             p.pending_block_spacing_lf >= 3);
+  ResetBookInlineImageStubState();
+}
+
 void TestPageBreakBeforeAlwaysUsesHardBreak() {
   TestCtx tc;
   tc.paragraph_spacing = 0;
@@ -971,6 +1103,40 @@ void TestPageBreakBeforeAlwaysUsesHardBreak() {
   xml_parse_utils::XmlParseResult r = xml_parse_utils::ParseXmlString(html, opts);
   ExpectTrue("hard-break: parse ok", r.ok);
   ExpectTrue("hard-break: creates second logical page", book.GetPageCount() >= 2);
+}
+
+void TestLargeFontPaginationDoesNotDropTextAcrossPages() {
+  TestCtx tc;
+  tc.text.SetPixelSize(20);
+  tc.text.linespacing = 2;
+  tc.paragraph_spacing = 0;
+  Book book(tc.ctx);
+  parsedata_t p = MakeParseData(tc, book);
+  xml_parse_utils::XmlParserOptions opts = MakeXmlOpts(&p);
+
+  std::string expected;
+  std::string html = "<html><body><p>";
+  for (int i = 0; i < 220; i++) {
+    char word[32];
+    snprintf(word, sizeof(word), "w%03d", i);
+    if (i > 0) {
+      html += " ";
+      expected += " ";
+    }
+    html += word;
+    expected += word;
+  }
+  html += "</p></body></html>";
+
+  const xml_parse_utils::XmlParseResult r =
+      xml_parse_utils::ParseXmlString(html, opts);
+  ExpectTrue("large-font-continuity: parse ok", r.ok);
+  ExpectTrue("large-font-continuity: spans multiple pages",
+             book.GetPageCount() > 1);
+
+  const std::string actual = ExtractVisibleAsciiFromPages(book);
+  ExpectTrue("large-font-continuity: all text preserved",
+             actual.find(expected) != std::string::npos);
 }
 
 } // namespace
@@ -996,7 +1162,10 @@ int main() {
   TestPostImageCssSpacingFlushesNearBottom();
   TestDecorativeBandImageSuppressesWrapperMargins();
   TestBandImageSeparatorSequenceMatchesRenderedHeight();
+  TestBodyTextIndentIsInheritedAndClassZeroOverrides();
+  TestImageOnlyParagraphKeepsExplicitBottomMargin();
   TestPageBreakBeforeAlwaysUsesHardBreak();
+  TestLargeFontPaginationDoesNotDropTextAcrossPages();
   printf("PASS: %d tests\n", g_pass);
   return 0;
 }

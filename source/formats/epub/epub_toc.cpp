@@ -173,7 +173,6 @@ int epub_resolve_toc(Book *book, std::string filepath) {
 
   const EpubDeps deps = BuildEpubDeps(book);
   IStatusReporter *reporter = deps.reporter;
-  IStatusReporter *app = reporter;
   if (reporter)
     DBG_LOG(reporter, "EPUB: TOC resolve begin");
   if (reporter)
@@ -298,8 +297,8 @@ int epub_resolve_toc(Book *book, std::string filepath) {
     std::string raw_title = Trim(toc_entries[i].title);
     std::string resolve_method = "skip-empty-raw";
     if (raw_title.empty()) {
-      if (app && resolve_problem_logs < kResolveProblemDiagLimit) {
-        LogTocResolveDecision(app, i, toc_entries[i], "", "",
+      if (reporter && resolve_problem_logs < kResolveProblemDiagLimit) {
+        LogTocResolveDecision(reporter, i, toc_entries[i], "", "",
                               resolve_method.c_str(), false, 0, " raw-empty");
         resolve_problem_logs++;
       }
@@ -311,12 +310,12 @@ int epub_resolve_toc(Book *book, std::string filepath) {
       title_match = raw_title;
       stat_title_empty_norm++;
       resolve_method = "norm-fallback-raw";
-      if (app && stat_title_empty_norm <= 3) {
+      if (reporter && stat_title_empty_norm <= 3) {
         char msg[160];
         std::string clip = ClipForDiag(raw_title, 100);
         snprintf(msg, sizeof(msg), "EPUB: TOC title normalize fallback [%u]=%s",
                  (unsigned)stat_title_empty_norm, clip.c_str());
-        DBG_LOG(app, msg);
+        DBG_LOG(reporter, msg);
       }
     }
     std::string title = title_match;
@@ -414,7 +413,7 @@ int epub_resolve_toc(Book *book, std::string filepath) {
       std::string fragment = ExtractHrefFragment(toc_entries[i].href);
       std::string proxy_href;
       if (LookupTocProxyHref(uf, mapped_doc_key, fragment, &toc_proxy_cache,
-                             &toc_proxy_attempted, &proxy_href, app)) {
+                             &toc_proxy_attempted, &proxy_href, reporter)) {
         u16 proxy_page = 0;
         bool proxy_ok = false;
         if (book->FindChapterAnchorPage(proxy_href, &proxy_page)) {
@@ -537,9 +536,9 @@ int epub_resolve_toc(Book *book, std::string filepath) {
       stat_skip_unmatched++;
       if (has_fragment)
         stat_fragment_unresolved++;
-      if (app && resolve_problem_logs < kResolveProblemDiagLimit) {
+      if (reporter && resolve_problem_logs < kResolveProblemDiagLimit) {
         const char *note = anchor_lookup_failed ? " anchor-miss" : "";
-        LogTocResolveDecision(app, i, toc_entries[i], display_title, title_match,
+        LogTocResolveDecision(reporter, i, toc_entries[i], display_title, title_match,
                               resolve_method.c_str(), false, 0, note);
         resolve_problem_logs++;
       }
@@ -547,8 +546,8 @@ int epub_resolve_toc(Book *book, std::string filepath) {
     }
     if (!has_fragment && used_pages_non_fragment[page]) {
       stat_skip_dup++;
-      if (app && resolve_problem_logs < kResolveProblemDiagLimit) {
-        LogTocResolveDecision(app, i, toc_entries[i], display_title, title_match,
+      if (reporter && resolve_problem_logs < kResolveProblemDiagLimit) {
+        LogTocResolveDecision(reporter, i, toc_entries[i], display_title, title_match,
                               "skip-dup-page", true, page, "");
         resolve_problem_logs++;
       }
@@ -562,8 +561,8 @@ int epub_resolve_toc(Book *book, std::string filepath) {
     entry.title = display_title;
     entry.level = toc_entries[i].level;
     resolved.push_back(entry);
-    if (app && i < kResolveDecisionDiagLimit) {
-      LogTocResolveDecision(app, i, toc_entries[i], display_title, title_match,
+    if (reporter && i < kResolveDecisionDiagLimit) {
+      LogTocResolveDecision(reporter, i, toc_entries[i], display_title, title_match,
                             resolve_method.c_str(), true, page,
                             page_from_doc_start ? " doc-start" : "");
     }
@@ -574,8 +573,8 @@ int epub_resolve_toc(Book *book, std::string filepath) {
   }
 
   if (resolved.empty()) {
-    if (app)
-      DBG_LOG(app, "EPUB: TOC resolve end (unmatched)");
+    if (reporter)
+      DBG_LOG(reporter, "EPUB: TOC resolve end (unmatched)");
     epub_data_delete(&parsedata);
     unzClose(uf);
     return 6;
@@ -585,15 +584,15 @@ int epub_resolve_toc(Book *book, std::string filepath) {
   for (size_t i = 0; i < resolved.size(); i++) {
     book->AddChapter(resolved[i].page, resolved[i].title, resolved[i].level);
   }
-  if (app)
-    LogResolvedChapterSamples(app, "TOC resolved chapters", resolved, 6);
+  if (reporter)
+    LogResolvedChapterSamples(reporter, "TOC resolved chapters", resolved, 6);
 
-  if (app) {
+  if (reporter) {
     char msg[96];
     snprintf(msg, sizeof(msg), "EPUB: toc entries=%u chapters=%u",
              (unsigned)toc_entries.size(),
              (unsigned)book->GetChapters().size());
-    DBG_LOG(app, msg);
+    DBG_LOG(reporter, msg);
     char map_msg[192];
     snprintf(map_msg, sizeof(map_msg),
              "EPUB: TOC map stats anchor=%u exact=%u nofrag=%u lower=%u "
@@ -603,7 +602,7 @@ int epub_resolve_toc(Book *book, std::string filepath) {
              (unsigned)stat_heading_fallback, (unsigned)stat_title_fallback,
              (unsigned)stat_title_global, (unsigned)stat_skip_unmatched,
              (unsigned)stat_skip_dup);
-    DBG_LOG(app, map_msg);
+    DBG_LOG(reporter, map_msg);
 
     size_t direct_count = stat_anchor + stat_exact + stat_nofrag + stat_lc +
                           stat_base + stat_proxy;
@@ -626,7 +625,7 @@ int epub_resolve_toc(Book *book, std::string filepath) {
              "EPUB: TOC quality=%s direct=%u heuristic=%u unresolved=%u",
              quality, (unsigned)direct_count, (unsigned)heuristic_count,
              (unsigned)stat_skip_unmatched);
-    DBG_LOG(app, quality_msg);
+    DBG_LOG(reporter, quality_msg);
 
     if (stat_fragment_unresolved > 0) {
       char warn_msg[160];
@@ -635,17 +634,17 @@ int epub_resolve_toc(Book *book, std::string filepath) {
                (unsigned)stat_fragment_unresolved,
                (unsigned)book->GetChapterAnchorCount(),
                (unsigned)stat_title_fallback);
-      DBG_LOG(app, warn_msg);
+      DBG_LOG(reporter, warn_msg);
       for (size_t i = 0; i < unresolved_fragment_samples.size(); i++) {
         char sample_msg[192];
         std::string clipped = ClipForDiag(unresolved_fragment_samples[i], 100);
         snprintf(sample_msg, sizeof(sample_msg),
                  "EPUB: TOC unresolved href[%u]=%s", (unsigned)i,
                  clipped.c_str());
-        DBG_LOG(app, sample_msg);
+        DBG_LOG(reporter, sample_msg);
       }
     }
-    DBG_LOG(app, "EPUB: TOC resolve end");
+    DBG_LOG(reporter, "EPUB: TOC resolve end");
   }
 
   epub_data_delete(&parsedata);

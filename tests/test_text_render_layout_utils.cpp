@@ -83,12 +83,12 @@ void TestResolveReadingScreenMetrics() {
   metrics = text_render_layout_utils::ResolveReadingScreenMetrics(
       false, true, 36, 16);
   ExpectEq("second right height", metrics.max_height, 320);
-  ExpectEq("second right bottom margin", metrics.bottom_margin, 16);
+  ExpectEq("second right bottom margin", metrics.bottom_margin, 24);
 
   metrics = text_render_layout_utils::ResolveReadingScreenMetrics(
       true, false, 36, 16);
   ExpectEq("first right height", metrics.max_height, 320);
-  ExpectEq("first right bottom margin", metrics.bottom_margin, 16);
+  ExpectEq("first right bottom margin", metrics.bottom_margin, 24);
 
   metrics = text_render_layout_utils::ResolveReadingScreenMetrics(
       false, false, 36, 16);
@@ -108,14 +108,14 @@ void TestResolveReadingScreenMetricsForReadingScreen() {
           false, 1, 36, 16);
   ExpectEq("turned-left second screen height", metrics.max_height, 320);
   ExpectEq("turned-left second screen bottom margin", metrics.bottom_margin,
-           16);
+           24);
 
   metrics =
       text_render_layout_utils::ResolveReadingScreenMetricsForReadingScreen(
           true, 0, 36, 16);
   ExpectEq("turned-right first screen height", metrics.max_height, 320);
   ExpectEq("turned-right first screen bottom margin", metrics.bottom_margin,
-           16);
+           24);
 
   metrics =
       text_render_layout_utils::ResolveReadingScreenMetricsForReadingScreen(
@@ -258,17 +258,17 @@ void TestCurrentLineVisibilityIgnoresFollowingLine() {
                  threshold + 1, max_height, bottom_margin));
 }
 
-void TestCurrentLineVisibilityUsesUnguardedFullScreenClip() {
+void TestCurrentLineVisibilityKeepsFullScreenPaginationGuard() {
   const int max_height = 400;
   const int unguarded_bottom_margin = 36;
   const int guarded_bottom_margin =
       unguarded_bottom_margin +
       text_render_layout_utils::kFullReadingScreenFooterGuardPx;
 
-  ExpectFalse("full-screen current line may use guarded safety band",
+  ExpectTrue("full-screen current line cannot use guarded safety band",
               text_render_layout_utils::CurrentLineBeyondReadingScreen(
                   360, max_height, guarded_bottom_margin));
-  ExpectFalse("full-screen current line may sit at unguarded clip edge",
+  ExpectTrue("full-screen current line cannot sit at unguarded clip edge",
               text_render_layout_utils::CurrentLineBeyondReadingScreen(
                   364, max_height, guarded_bottom_margin));
   ExpectTrue("full-screen current line past unguarded clip still overflows",
@@ -276,17 +276,17 @@ void TestCurrentLineVisibilityUsesUnguardedFullScreenClip() {
                  365, max_height, guarded_bottom_margin));
 }
 
-void TestCurrentLineFitsUsesSameFullScreenBaselineAsVisibility() {
+void TestCurrentLineFitsKeepsFullScreenPaginationGuard() {
   const int max_height = 400;
   const int guarded_bottom_margin =
       36 + text_render_layout_utils::kFullReadingScreenFooterGuardPx;
   const int line_h = 13;
   const int line_ls = 0;
 
-  ExpectTrue("full-screen baseline at 358 fits",
+  ExpectFalse("full-screen baseline inside guard does not fit",
              text_render_layout_utils::CurrentLineFitsScreen(
                  358, line_h, line_ls, max_height, guarded_bottom_margin));
-  ExpectTrue("full-screen baseline at unguarded clip edge fits",
+  ExpectFalse("full-screen baseline at unguarded clip edge does not fit",
              text_render_layout_utils::CurrentLineFitsScreen(
                  364, line_h, line_ls, max_height, guarded_bottom_margin));
   ExpectFalse("full-screen baseline past unguarded clip edge overflows",
@@ -312,7 +312,7 @@ void TestCurrentLineFitAllowsVisualLastLineWithoutFollowingRoom() {
   const int line_h = 13;
   const int line_ls = 2;
 
-  ExpectTrue("line may bleed two pixels below compact threshold",
+  ExpectFalse("line may not bleed below compact threshold",
              text_render_layout_utils::CurrentLineFitsScreen(
                  306, line_h, line_ls, max_height, bottom_margin));
   ExpectTrue("line beyond compact bleed does not fit",
@@ -394,6 +394,15 @@ void TestBottomSafeAreaRendererClipAboveOverflowThreshold() {
              edge_pen_y + conservative_descent < clip_boundary);
 }
 
+void TestPaginationGuardScalesForLargeFonts() {
+  ExpectEq("small fonts keep legacy guard",
+           text_render_layout_utils::ResolvePaginationSafetyGuard(12),
+           text_render_layout_utils::kFullReadingScreenFooterGuardPx);
+  ExpectTrue("large fonts reserve descender-safe guard",
+             text_render_layout_utils::ResolvePaginationSafetyGuard(24) >
+                 text_render_layout_utils::kFullReadingScreenFooterGuardPx);
+}
+
 } // namespace
 
 int main() {
@@ -410,11 +419,12 @@ int main() {
   TestWouldOverflowReadingScreen();
   TestWouldCurrentLineOverflowReadingScreen();
   TestCurrentLineVisibilityIgnoresFollowingLine();
-  TestCurrentLineVisibilityUsesUnguardedFullScreenClip();
-  TestCurrentLineFitsUsesSameFullScreenBaselineAsVisibility();
+  TestCurrentLineVisibilityKeepsFullScreenPaginationGuard();
+  TestCurrentLineFitsKeepsFullScreenPaginationGuard();
   TestParagraphStartGuardAllowsOneLineParagraphInLastSlot();
   TestCurrentLineFitAllowsVisualLastLineWithoutFollowingRoom();
   TestBandImageAdvanceKeepsLastVisibleBaseline();
   TestBottomSafeAreaRendererClipAboveOverflowThreshold();
+  TestPaginationGuardScalesForLargeFonts();
   return 0;
 }

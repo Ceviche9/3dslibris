@@ -1,9 +1,14 @@
 #pragma once
 
+#include <3ds/types.h>
+#include <cstddef>
 #include <deque>
+#include <string>
 
-#include "app/app.h"
+#include "library/library_job.h"
 
+class App;
+struct FrameInput;
 class Book;
 class Text;
 
@@ -20,7 +25,7 @@ public:
   void PrepareLibrary();
   void SortBooks();
   void browser_draw();
-  void browser_handleevent();
+  void browser_handleevent(const FrameInput &input);
   void browser_init();
   void UnloadNonVisibleBrowserCoverCaches();
   void browser_nextpage();

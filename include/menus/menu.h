@@ -14,15 +14,18 @@
 /*  Abstract base for Book, Pref and Font menus. */
 #include <3ds.h>
 #include <vector>
+#include "app/frame_input.h"
+#include "menus/menu_context.h"
 
 class Menu {
 public:
   Menu(class App *app);
+  explicit Menu(const MenuContext &context);
   virtual ~Menu();
   virtual void Draw() = 0; // Draw the menu on the screen
   virtual u16 GetCurrentPage() const;
   virtual u16 GetPageCount() const;
-  virtual void HandleInput(u32 keys) = 0; // Handle input events
+  virtual void HandleInput(const FrameInput &input) = 0;
   virtual void SelectItem(u16 index);
 
   class App *app; //! Pointer to the application instance.
@@ -31,6 +34,7 @@ public:
   class Button *buttonnext;    //! Pointer into app->buttonnext.
   class Button *buttonprefs;   //! Pointer into app->buttonprefs.
   const u8 *color_mode;        //! Pointer into app->colorMode.
+  class IStatusReporter *status_reporter;
   std::vector<class Button *> buttons;
   bool dirty;
   u16 page;

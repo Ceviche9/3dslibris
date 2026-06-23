@@ -15,10 +15,7 @@
 #include "shared/screen_dimensions.h"
 
 #include <algorithm>
-#include <dirent.h>
 #include <sys/types.h>
-#include <errno.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/stat.h>
@@ -29,7 +26,6 @@
 #include "book/book.h"
 #include "book/book_renderer.h"
 #include "library/browser_view_utils.h"
-#include "utf8proc.h"
 #include "ui/button.h"
 #include "ui/ui_button_skin.h"
 #include "shared/color_utils.h"
@@ -38,8 +34,11 @@
 #include "parse.h"
 #include "shared/path_constants.h"
 #include "settings/prefs.h"
+#include "settings/prefs_action_utils.h"
 #include "settings/prefs_button_context_utils.h"
+#include "settings/cache_cleanup_utils.h"
 #include "settings/prefs_input_utils.h"
+#include "settings/prefs_style_value_utils.h"
 #include "ui/text.h"
 #include "ui/screen_layout_constants.h"
 #include "ui/text_limits.h"
@@ -49,16 +48,6 @@ static const int PREFS_LIBRARY_BTN_Y = 286;
 static const int PREFS_LIBRARY_BTN_W = 104;
 static const int PREFS_LIBRARY_BTN_H = 26;
 
-
-static const int kPage2Buttons[] = {
-    PREFS_BUTTON_FONT_CONFIG,
-    PREFS_BUTTON_FONTSIZE,
-    PREFS_BUTTON_LINE_SPACING,
-    PREFS_BUTTON_PARASPACING,
-    PREFS_BUTTON_PUBLISHER_TEXT_INDENT,
-    PREFS_BUTTON_PUBLISHER_BLOCK_MARGINS,
-};
-static const int kPage2ButtonCount = 6;
 
 static const int PREFS_ROW_X = 5;
 static const int PREFS_ROW_W = 230;
@@ -93,14 +82,14 @@ static void SyncLibraryButtonLayout(Button *button, bool paged, bool book_ctx) {
 static void ToggleClockFormatSetting(Prefs *prefs) {
   if (!prefs)
     return;
-  prefs->time24h = !prefs->time24h;
+  prefs->time24h = settings::ToggleSetting(prefs->time24h);
   prefs->Write();
 }
 
 static void ToggleReopenLastBookSetting(App *app) {
   if (!app)
     return;
-  app->reopen = !app->reopen;
+  app->reopen = settings::ToggleSetting(app->reopen);
   if (app->prefs)
     app->prefs->Write();
 }
@@ -109,7 +98,7 @@ static void CycleColorMode(Text *ts, App *app) {
   if (!ts)
     return;
   int mode = ts->GetColorMode();
-  int next = (mode + 1) % 6;
+  const int next = settings::NextCyclicSetting(mode, 6);
   ts->SetColorMode(next);
   UiButtonSkin_SetColorMode(next);
   if (app) {
@@ -181,23 +170,23 @@ static bool CurrentBookHasExtraPrefsPage(Book *book, bool is_book_ctx) {
 static void ToggleFixedLayoutReadingDirection(Prefs *prefs) {
   if (!prefs)
     return;
-  prefs->fixed_layout_rtl = !prefs->fixed_layout_rtl;
+  prefs->fixed_layout_rtl = settings::ToggleSetting(prefs->fixed_layout_rtl);
   prefs->Write();
 }
 
 static void ToggleCirclePadPageTurnSetting(Prefs *prefs) {
   if (!prefs)
     return;
-  prefs->circle_pad_page_turn = !prefs->circle_pad_page_turn;
+  prefs->circle_pad_page_turn =
+      settings::ToggleSetting(prefs->circle_pad_page_turn);
   prefs->Write();
 }
 
 static void CycleLibrarySortSetting(App *app) {
   if (!app || !app->prefs)
     return;
-  int next = static_cast<int>(app->prefs->library_sort_mode) + 1;
-  if (next >= LIBRARY_SORT_COUNT)
-    next = 0;
+  const int next = settings::NextCyclicSetting(
+      static_cast<int>(app->prefs->library_sort_mode), LIBRARY_SORT_COUNT);
   app->prefs->library_sort_mode = static_cast<LibrarySortMode>(next);
   app->prefs->Write();
   app->ReSortLibraryBooks();
@@ -205,24 +194,14 @@ static void CycleLibrarySortSetting(App *app) {
   app->MarkBrowserDirty();
 }
 
-static int CycleBookOverride(int current) {
-  if (current < 0)
-    return 0;
-  if (current == 0)
-    return 1;
-  return -1;
-}
-
-static int EffectiveBookFontSize(App *app, Book *book) {
-  if (book && book->GetStyleFontSizeOverride() >= 0)
-    return book->GetStyleFontSizeOverride();
-  return app ? app->reader_font_size : 12;
-}
-
-static int EffectiveBookLineSpacing(App *app, Book *book) {
-  if (book && book->GetStyleLineSpacingOverride() >= 0)
-    return book->GetStyleLineSpacingOverride();
-  return app ? app->reader_line_spacing : 0;
+static settings::StyleValueContext StyleValueForBook(
+    bool is_book_ctx, Book *book, int global_value, int override_value) {
+  settings::StyleValueContext context;
+  context.from_book = is_book_ctx && book;
+  context.uses_text_layout = !book || book->UsesTextLayoutSettings();
+  context.global_value = global_value;
+  context.override_value = override_value;
+  return context;
 }
 
 static void TogglePublisherTextIndentSetting(App *app, Book *book, bool is_book_ctx) {
@@ -230,10 +209,12 @@ static void TogglePublisherTextIndentSetting(App *app, Book *book, bool is_book_
     return;
   if (is_book_ctx && book && book->UsesTextLayoutSettings()) {
     book->SetStylePublisherTextIndentOverride(
-        CycleBookOverride(book->GetStylePublisherTextIndentOverride()));
+        settings::NextTriStateOverride(
+            book->GetStylePublisherTextIndentOverride()));
     app->MarkBookLayoutDirty();
   } else {
-    app->publisher_text_indent = !app->publisher_text_indent;
+    app->publisher_text_indent =
+        settings::ToggleSetting(app->publisher_text_indent);
     app->MarkBookLayoutDirty();
   }
   if (app->prefs)
@@ -245,10 +226,12 @@ static void TogglePublisherBlockMarginsSetting(App *app, Book *book, bool is_boo
     return;
   if (is_book_ctx && book && book->UsesTextLayoutSettings()) {
     book->SetStylePublisherBlockMarginsOverride(
-        CycleBookOverride(book->GetStylePublisherBlockMarginsOverride()));
+        settings::NextTriStateOverride(
+            book->GetStylePublisherBlockMarginsOverride()));
     app->MarkBookLayoutDirty();
   } else {
-    app->publisher_block_margins = !app->publisher_block_margins;
+    app->publisher_block_margins =
+        settings::ToggleSetting(app->publisher_block_margins);
     app->MarkBookLayoutDirty();
   }
   if (app->prefs)
@@ -260,32 +243,26 @@ SettingsController::SettingsController(App &app)
 
 int SettingsController::EffectiveVisibleCount() const {
   const bool is_book_ctx = app_.IsBookSettingsContext();
-  if (!is_book_ctx && prefs_general_page_ == 1)
-    return kPage2ButtonCount;
-  if (is_book_ctx && prefs_general_page_ == 1)
-    return settings::BookPrefsPage2ButtonCount(
-        app_.GetCurrentBook() && app_.GetCurrentBook()->IsFixedLayout());
-  if (!is_book_ctx && prefs_general_page_ == 2)
-    return (int)settings::ExtraPrefsButtonCount();
-  return (int)settings::VisiblePrefsButtonCount(
-      is_book_ctx,
-      CurrentBookUsesLineWrapFixSlot(app_.GetCurrentBook(), is_book_ctx));
+  settings::PrefsPageContext context;
+  context.from_book = is_book_ctx;
+  context.page = prefs_general_page_;
+  context.fixed_layout =
+      app_.GetCurrentBook() && app_.GetCurrentBook()->IsFixedLayout();
+  context.include_line_wrap_fix =
+      CurrentBookUsesLineWrapFixSlot(app_.GetCurrentBook(), is_book_ctx);
+  return (int)settings::PrefsPageButtonCount(context);
 }
 
 int SettingsController::EffectiveButtonForSlot(int slot) const {
   const bool is_book_ctx = app_.IsBookSettingsContext();
-  if (!is_book_ctx && prefs_general_page_ == 1)
-    return (slot >= 0 && slot < kPage2ButtonCount) ? kPage2Buttons[slot] : kPage2Buttons[0];
-  if (is_book_ctx && prefs_general_page_ == 1)
-    return settings::BookPrefsPage2ButtonForSlot(
-        app_.GetCurrentBook() && app_.GetCurrentBook()->IsFixedLayout(),
-        (u8)slot);
-  if (!is_book_ctx && prefs_general_page_ == 2)
-    return settings::ExtraPrefsButtonForSlot((u8)slot);
-  return settings::PrefsButtonForVisibleSlot(
-      is_book_ctx,
-      CurrentBookUsesLineWrapFixSlot(app_.GetCurrentBook(), is_book_ctx),
-      (u8)slot);
+  settings::PrefsPageContext context;
+  context.from_book = is_book_ctx;
+  context.page = prefs_general_page_;
+  context.fixed_layout =
+      app_.GetCurrentBook() && app_.GetCurrentBook()->IsFixedLayout();
+  context.include_line_wrap_fix =
+      CurrentBookUsesLineWrapFixSlot(app_.GetCurrentBook(), is_book_ctx);
+  return settings::PrefsPageButtonForSlot(context, (u8)slot);
 }
 
 void SettingsController::GoToPrefsPage(int page) {
@@ -494,9 +471,9 @@ void SettingsController::PrefsDraw() {
   app_.SetPrefsDirty(false);
 }
 
-void SettingsController::PrefsHandleEvent() {
-  u32 keys = hidKeysDown();
-  u32 held = hidKeysHeld();
+void SettingsController::PrefsHandleEvent(const FrameInput &input) {
+  const u32 keys = input.keys_down;
+  const u32 held = input.keys_held;
 #ifdef DSLIBRIS_DEBUG
   static int s_prefs_keys_budget = 48;
   if (s_prefs_keys_budget > 0 && keys) {
@@ -535,7 +512,7 @@ void SettingsController::PrefsHandleEvent() {
       go_to_page_dialog_.AdjustTarget((int)kGoToPageCoarseStep);
     }
     if ((keys & KEY_TOUCH) || (held & KEY_TOUCH))
-      go_to_page_dialog_.HandleTouch((keys & KEY_TOUCH) != 0);
+      go_to_page_dialog_.HandleTouch(input, (keys & KEY_TOUCH) != 0);
     if (prefs_input_utils::ShouldRedrawPrefsAfterOverlayInput(
             app_.IsPrefsDirty(), app_.GetMode() == AppMode::Prefs))
       PrefsDraw();
@@ -588,13 +565,13 @@ void SettingsController::PrefsHandleEvent() {
              (keys & app_.key.down)) {
     PrefsIncreaseParaspacing();
   } else if (keys & KEY_TOUCH) {
-    PrefsHandleTouch();
+    PrefsHandleTouch(input);
   }
 }
 
-void SettingsController::PrefsHandleTouch() {
+void SettingsController::PrefsHandleTouch(const FrameInput &input) {
   const AppMode mode_before_touch = app_.GetMode();
-  touchPosition coord = app_.TouchRead();
+  touchPosition coord = app_.MapTouch(input);
   const int footerX = (int)coord.px;
   const int footerY = (int)coord.py;
 
@@ -700,7 +677,9 @@ void SettingsController::PrefsIncreasePixelSize() {
     return;
   Book *book = app_.GetCurrentBook();
   if (app_.IsBookSettingsContext() && book) {
-    int value = EffectiveBookFontSize(&app_, book);
+    const int value = settings::EffectiveStyleValue(StyleValueForBook(
+        true, book, app_.reader_font_size,
+        book->GetStyleFontSizeOverride()));
     if (value < kTextPixelSizeMax) {
       book->SetStyleFontSizeOverride(value + 1);
       app_.ts->SetPixelSize((u8)(value + 1));
@@ -723,7 +702,9 @@ void SettingsController::PrefsDecreasePixelSize() {
     return;
   Book *book = app_.GetCurrentBook();
   if (app_.IsBookSettingsContext() && book) {
-    int value = EffectiveBookFontSize(&app_, book);
+    const int value = settings::EffectiveStyleValue(StyleValueForBook(
+        true, book, app_.reader_font_size,
+        book->GetStyleFontSizeOverride()));
     if (value > kTextPixelSizeMin) {
       book->SetStyleFontSizeOverride(value - 1);
       app_.ts->SetPixelSize((u8)(value - 1));
@@ -746,7 +727,9 @@ void SettingsController::PrefsIncreaseLineSpacing() {
     return;
   Book *book = app_.GetCurrentBook();
   if (app_.IsBookSettingsContext() && book) {
-    int value = EffectiveBookLineSpacing(&app_, book);
+    const int value = settings::EffectiveStyleValue(StyleValueForBook(
+        true, book, app_.reader_line_spacing,
+        book->GetStyleLineSpacingOverride()));
     if (value < kLineSpacingMaxPx) {
       book->SetStyleLineSpacingOverride(value + 1);
       app_.ts->linespacing = value + 1;
@@ -769,7 +752,9 @@ void SettingsController::PrefsDecreaseLineSpacing() {
     return;
   Book *book = app_.GetCurrentBook();
   if (app_.IsBookSettingsContext() && book) {
-    int value = EffectiveBookLineSpacing(&app_, book);
+    const int value = settings::EffectiveStyleValue(StyleValueForBook(
+        true, book, app_.reader_line_spacing,
+        book->GetStyleLineSpacingOverride()));
     if (value > 0) {
       book->SetStyleLineSpacingOverride(value - 1);
       app_.ts->linespacing = value - 1;
@@ -877,59 +862,26 @@ void SettingsController::PrefsRefreshButton(int index) {
     }
     break;
   case PREFS_BUTTON_FONTSIZE:
-    if (is_book_ctx && book && !book->UsesTextLayoutSettings()) {
-      app_.prefsButtons[PREFS_BUTTON_FONTSIZE].SetLabel2(std::string("(PDF fixed)"));
-    } else if (is_book_ctx && book &&
-               book->GetStyleFontSizeOverride() < 0) {
-      snprintf(msg, sizeof(msg), "                  inherit < %d >",
-               app_.reader_font_size);
-      app_.prefsButtons[PREFS_BUTTON_FONTSIZE].SetLabel2(std::string(msg));
-    } else {
-      snprintf(msg, sizeof(msg), "                        < %d >  ",
-               is_book_ctx && book ? EffectiveBookFontSize(&app_, book)
-                                   : app_.reader_font_size);
-      app_.prefsButtons[PREFS_BUTTON_FONTSIZE].SetLabel2(std::string(msg));
-    }
+    app_.prefsButtons[PREFS_BUTTON_FONTSIZE].SetLabel2(
+        settings::FontSizeValueLabel(StyleValueForBook(
+            is_book_ctx, book, app_.reader_font_size,
+            book ? book->GetStyleFontSizeOverride() : -1)));
     break;
   case PREFS_BUTTON_LINE_SPACING:
     app_.prefsButtons[PREFS_BUTTON_LINE_SPACING].SetLabel1(
         std::string("extra line spacing"));
-    if (is_book_ctx && book && !book->UsesTextLayoutSettings()) {
-      app_.prefsButtons[PREFS_BUTTON_LINE_SPACING].SetLabel2(
-          std::string("(PDF fixed)"));
-    } else if (is_book_ctx && book &&
-               book->GetStyleLineSpacingOverride() < 0) {
-      snprintf(msg, sizeof(msg), "        inherit < %d pixels >",
-               app_.reader_line_spacing);
-      app_.prefsButtons[PREFS_BUTTON_LINE_SPACING].SetLabel2(
-          std::string(msg));
-    } else {
-      snprintf(msg, sizeof(msg), "               < %d pixels >  ",
-               is_book_ctx && book ? EffectiveBookLineSpacing(&app_, book)
-                                   : app_.reader_line_spacing);
-      app_.prefsButtons[PREFS_BUTTON_LINE_SPACING].SetLabel2(
-          std::string(msg));
-    }
+    app_.prefsButtons[PREFS_BUTTON_LINE_SPACING].SetLabel2(
+        settings::LineSpacingValueLabel(StyleValueForBook(
+            is_book_ctx, book, app_.reader_line_spacing,
+            book ? book->GetStyleLineSpacingOverride() : -1)));
     break;
   case PREFS_BUTTON_PARASPACING:
     app_.prefsButtons[PREFS_BUTTON_PARASPACING].SetLabel1(
         std::string("extra paragraph spacing"));
-    if (is_book_ctx && book && !book->UsesTextLayoutSettings()) {
-      app_.prefsButtons[PREFS_BUTTON_PARASPACING].SetLabel2(
-          std::string("(PDF fixed)"));
-    } else if (is_book_ctx && book &&
-               book->GetStyleParagraphSpacingOverride() < 0) {
-      snprintf(msg, sizeof(msg), "          inherit < %d lines >",
-               app_.paraspacing);
-      app_.prefsButtons[PREFS_BUTTON_PARASPACING].SetLabel2(std::string(msg));
-    } else if (is_book_ctx && book) {
-      snprintf(msg, sizeof(msg), "                 < %d lines >  ",
-               book->GetStyleParagraphSpacingOverride());
-      app_.prefsButtons[PREFS_BUTTON_PARASPACING].SetLabel2(std::string(msg));
-    } else {
-      snprintf(msg, sizeof(msg), "                 < %d lines >  ", app_.paraspacing);
-      app_.prefsButtons[PREFS_BUTTON_PARASPACING].SetLabel2(std::string(msg));
-    }
+    app_.prefsButtons[PREFS_BUTTON_PARASPACING].SetLabel2(
+        settings::ParagraphSpacingValueLabel(StyleValueForBook(
+            is_book_ctx, book, app_.paraspacing,
+            book ? book->GetStyleParagraphSpacingOverride() : -1)));
     break;
   case PREFS_BUTTON_ORIENTATION:
     app_.prefsButtons[PREFS_BUTTON_ORIENTATION].SetLabel2(
@@ -1076,79 +1028,27 @@ void SettingsController::PrefsRefreshButton(int index) {
   case PREFS_BUTTON_PUBLISHER_TEXT_INDENT:
     app_.prefsButtons[PREFS_BUTTON_PUBLISHER_TEXT_INDENT].SetLabel1(
         std::string("publisher indent"));
-    if (is_book_ctx && book && book->UsesTextLayoutSettings() &&
-        book->GetStylePublisherTextIndentOverride() < 0) {
-      app_.prefsButtons[PREFS_BUTTON_PUBLISHER_TEXT_INDENT].SetLabel2(
-          app_.publisher_text_indent ? std::string("inherit on")
-                                     : std::string("inherit off"));
-    } else {
-      const bool enabled =
-          is_book_ctx && book ? book->GetPublisherTextIndentEnabled()
-                              : app_.publisher_text_indent;
-      app_.prefsButtons[PREFS_BUTTON_PUBLISHER_TEXT_INDENT].SetLabel2(
-          enabled ? std::string("on") : std::string("off"));
-    }
+    app_.prefsButtons[PREFS_BUTTON_PUBLISHER_TEXT_INDENT].SetLabel2(
+        settings::PublisherSettingValueLabel(
+            is_book_ctx && book, !book || book->UsesTextLayoutSettings(),
+            book ? book->GetStylePublisherTextIndentOverride() : -1,
+            app_.publisher_text_indent,
+            book ? book->GetPublisherTextIndentEnabled()
+                 : app_.publisher_text_indent));
     break;
   case PREFS_BUTTON_PUBLISHER_BLOCK_MARGINS:
     app_.prefsButtons[PREFS_BUTTON_PUBLISHER_BLOCK_MARGINS].SetLabel1(
         std::string("publisher margins"));
-    if (is_book_ctx && book && book->UsesTextLayoutSettings() &&
-        book->GetStylePublisherBlockMarginsOverride() < 0) {
-      app_.prefsButtons[PREFS_BUTTON_PUBLISHER_BLOCK_MARGINS].SetLabel2(
-          app_.publisher_block_margins ? std::string("inherit on")
-                                       : std::string("inherit off"));
-    } else {
-      const bool enabled =
-          is_book_ctx && book ? book->GetPublisherBlockMarginsEnabled()
-                              : app_.publisher_block_margins;
-      app_.prefsButtons[PREFS_BUTTON_PUBLISHER_BLOCK_MARGINS].SetLabel2(
-          enabled ? std::string("on") : std::string("off"));
-    }
+    app_.prefsButtons[PREFS_BUTTON_PUBLISHER_BLOCK_MARGINS].SetLabel2(
+        settings::PublisherSettingValueLabel(
+            is_book_ctx && book, !book || book->UsesTextLayoutSettings(),
+            book ? book->GetStylePublisherBlockMarginsOverride() : -1,
+            app_.publisher_block_margins,
+            book ? book->GetPublisherBlockMarginsEnabled()
+                 : app_.publisher_block_margins));
     break;
   }
   app_.MarkPrefsDirty();
-}
-
-// On macOS/Azahar, APFS returns NFD filenames from readdir, but the 3DS FS
-// service stored the file under NFC UTF-16. Normalize d_name to NFC so
-// libctru's UTF-8→UTF-16 conversion produces a matching codepoint.
-static void RemoveFromDir(const char *dir, const char *name) {
-  char path[512];
-  uint8_t *nfc = nullptr;
-  utf8proc_ssize_t nfc_len = utf8proc_map(
-      (const uint8_t *)name, 0, &nfc,
-      (utf8proc_option_t)(UTF8PROC_NULLTERM | UTF8PROC_STABLE | UTF8PROC_COMPOSE));
-  const char *safe_name = (nfc_len >= 0 && nfc) ? (const char *)nfc : name;
-  snprintf(path, sizeof(path), "%s/%s", dir, safe_name);
-  int rc = remove(path);
-  free(nfc);
-#ifdef DSLIBRIS_DEBUG
-  if (rc != 0) {
-    App *app_dbg = App::GetInstance();
-    if (app_dbg)
-      DBG_LOGF(app_dbg, "DeleteDirContents: remove failed path=%s rc=%d errno=%d",
-               path, rc, errno);
-  }
-#endif
-}
-
-static void DeleteDirContents(const char *dir) {
-  DIR *d = opendir(dir);
-  if (!d) {
-#ifdef DSLIBRIS_DEBUG
-    App *app_dbg = App::GetInstance();
-    if (app_dbg)
-      DBG_LOGF(app_dbg, "DeleteDirContents: opendir failed dir=%s errno=%d", dir, errno);
-#endif
-    return;
-  }
-  struct dirent *ent;
-  while ((ent = readdir(d)) != NULL) {
-    if (ent->d_name[0] == '.')
-      continue;
-    RemoveFromDir(dir, ent->d_name);
-  }
-  closedir(d);
 }
 
 void SettingsController::ClearAllCaches() {
@@ -1160,11 +1060,22 @@ void SettingsController::ClearAllCaches() {
     b->SetPendingMobiPageCacheSave(false);
   }
 
-  DeleteDirContents(paths::GetEpubCacheDir().c_str());
-  DeleteDirContents(paths::GetMobiCacheDir().c_str());
-  DeleteDirContents(paths::GetMobiCoverMetaCacheDir().c_str());
-  DeleteDirContents(paths::GetMetaCacheDir().c_str());
-  DeleteDirContents(paths::GetCoverCacheDir().c_str());
+  const std::string cache_dirs[] = {
+      paths::GetEpubCacheDir(), paths::GetMobiCacheDir(),
+      paths::GetMobiCoverMetaCacheDir(), paths::GetMetaCacheDir(),
+      paths::GetCoverCacheDir()};
+  for (size_t i = 0; i < sizeof(cache_dirs) / sizeof(cache_dirs[0]); i++) {
+#ifdef DSLIBRIS_DEBUG
+    const settings::CacheCleanupResult result =
+        settings::DeleteCacheDirectoryContents(cache_dirs[i].c_str());
+    if (!result.opened || result.failed > 0)
+      DBG_LOGF(&app_, "ClearAllCaches: dir=%s opened=%d removed=%d failed=%d",
+               cache_dirs[i].c_str(), result.opened ? 1 : 0, result.removed,
+               result.failed);
+#else
+    settings::DeleteCacheDirectoryContents(cache_dirs[i].c_str());
+#endif
+  }
 
   for (int i = 0; i < app_.BookCount(); i++) {
     Book *b = app_.books[i];
@@ -1272,7 +1183,8 @@ void SettingsController::PrefsHandlePress() {
   }
 
   if (selected_button == PREFS_BUTTON_TIME_REMAINING) {
-    app_.prefs->show_time_remaining = !app_.prefs->show_time_remaining;
+    app_.prefs->show_time_remaining =
+        settings::ToggleSetting(app_.prefs->show_time_remaining);
     PrefsRefreshButton(PREFS_BUTTON_TIME_REMAINING);
     app_.prefs->Write();
     app_.RequestStatusRedraw();
@@ -1401,9 +1313,13 @@ void App::PrefsInit() { settings_controller_->PrefsInit(); }
 
 void App::PrefsDraw() { settings_controller_->PrefsDraw(); }
 
-void App::PrefsHandleEvent() { settings_controller_->PrefsHandleEvent(); }
+void App::PrefsHandleEvent(const FrameInput &input) {
+  settings_controller_->PrefsHandleEvent(input);
+}
 
-void App::PrefsHandleTouch() { settings_controller_->PrefsHandleTouch(); }
+void App::PrefsHandleTouch(const FrameInput &input) {
+  settings_controller_->PrefsHandleTouch(input);
+}
 
 void App::PrefsIncreasePixelSize() { settings_controller_->PrefsIncreasePixelSize(); }
 

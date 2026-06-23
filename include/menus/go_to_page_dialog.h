@@ -12,6 +12,7 @@
 #include <3ds.h>
 
 class App;
+struct FrameInput;
 
 class GoToPageDialog {
 public:
@@ -23,7 +24,7 @@ public:
   void AdjustTarget(int delta);
   bool Confirm();
   void Draw();
-  void HandleTouch(bool touch_down);
+  void HandleTouch(const FrameInput &input, bool touch_down);
 
 private:
   App &app_;

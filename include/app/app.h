@@ -60,6 +60,7 @@ https://github.com/rhaleblian/dslibris
 
 #include "menus/bookmark_menu.h"
 #include "menus/chapter_menu.h"
+#include "library/library_job.h"
 #include "settings/font.h"
 #include "ui/button.h"
 #include "shared/main.h"
@@ -69,6 +70,9 @@ https://github.com/rhaleblian/dslibris
 #include "ui/text.h"
 #include "shared/status_reporter.h"
 #include "app/app_lifecycle_state.h"
+#include "app/frame_input.h"
+#include "app/app_mode.h"
+#include "app/key_map.h"
 
 class Book;
 class Prefs;
@@ -80,36 +84,6 @@ class StartupController;
 class MainLoopController;
 
 #define APP_BROWSER_BUTTON_COUNT 4
-
-// Forward declarations for controller classes to avoid circular dependencies in headers.
-enum class AppMode : u8
-{
-  Book = 0,
-  Browser = 1,
-  Prefs = 2,
-  PrefsFont = 3,
-  PrefsFontBold = 4,
-  PrefsFontItalic = 5,
-  PrefsFontBoldItalic = 6,
-  Quit = 7,
-  Bookmarks = 8,
-  Chapters = 9,
-  Opening = 10,
-  BookInfo = 11,
-};
-
-enum app_job_type_t
-{
-  APP_JOB_INDEX_METADATA,
-  APP_JOB_EXTRACT_COVER,
-  APP_JOB_RESOLVE_TOC
-};
-
-struct app_job_t
-{
-  app_job_type_t type;
-  Book *book;
-};
 
 //! \brief Main application.
 //!
@@ -131,15 +105,7 @@ public:
   std::string fontdir;          //! Directory to search for font files
 
   //! key functions are remappable to support screen flipping.
-  struct
-  {
-    u32 up, down, left, right, // Circle Pad directions.
-         zl, zr, l, r,              // Shoulder buttons.
-         dup, ddown, dleft, dright, // D-pad directions as separate entries for remapping buttons.
-         a, b, x, y,          // Face buttons.
-         start, select;       // Start and Select buttons.
-    u32 downrepeat;
-  } key;
+  KeyMap key;
 
   std::vector<Button *> buttons;
   Button buttonprev, buttonnext, buttonprefs, buttonback; //! Buttons on browser bottom.
@@ -172,7 +138,7 @@ public:
   void PrintStatus(const char *msg) override;
   void PrintStatus(std::string msg) override;
   int Run(void);
-  touchPosition TouchRead();
+  touchPosition MapTouch(const FrameInput &input) const;
   void UpdateStatus();
   void RequestStatusRedraw();
   void parse_error(XML_ParserStruct *ps);
@@ -205,18 +171,18 @@ public:
   void ClearSkipNextBrowserPresent();
   void ProcessJobs(u32 budget_ms);
   void browser_draw();
-  void browser_handleevent();
+  void browser_handleevent(const FrameInput &input);
   void browser_init();
   void TickBrowserWarmup();
   void browser_tick_marquee();
   void ResetBrowserMarquee();
   void PrefsDraw();
-  void PrefsHandleEvent();
+  void PrefsHandleEvent(const FrameInput &input);
   void PersistPrefs();
-  void RunFontMenuFrame(u32 keys);
-  void RunBookmarksMenuFrame(u32 keys);
-  void RunChaptersMenuFrame(u32 keys);
-  void RunBookInfoFrame(u32 keys);
+  void RunFontMenuFrame(const FrameInput &input);
+  void RunBookmarksMenuFrame(const FrameInput &input);
+  void RunChaptersMenuFrame(const FrameInput &input);
+  void RunBookInfoFrame(const FrameInput &input);
   bool PresentIfDirty();
   int StartupFindBooks();
   void StartupPrepareLibrary();
@@ -229,8 +195,8 @@ public:
   // app_book.cpp
   void CloseBook();
   int GetBookIndex(Book *);
-  void HandleEventInBook();
-  void HandleEventInOpening();
+  void HandleEventInBook(const FrameInput &input);
+  void HandleEventInOpening(const FrameInput &input);
   u8 OpenBook();
   void ToggleBookmark();
   void MarkBookLayoutDirty();
@@ -456,7 +422,7 @@ private:
 
   // app_prefs.cpp
   void PrefsHandlePress();
-  void PrefsHandleTouch();
+  void PrefsHandleTouch(const FrameInput &input);
   void PrefsInit();
   void PrefsIncreasePixelSize();
   void PrefsDecreasePixelSize();

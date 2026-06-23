@@ -18,5 +18,10 @@ typedef struct {
   long y;
 } FT_Vector;
 
+typedef struct {
+  u16 px;
+  u16 py;
+} touchPosition;
+
 static inline long long osGetTime(void) { return 0; }
 static inline void aptSetHomeAllowed(bool) {}

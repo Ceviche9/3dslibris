@@ -226,7 +226,7 @@ static int ParseEpubSpineDocuments(
   if (!uf || !book || !parsedata || !page_start_by_href)
     return 1;
 
-  IStatusReporter *app = deps.reporter;
+  IStatusReporter *reporter = deps.reporter;
   epub_zip_utils::ZipEntryIndex zip_index;
   int rc = 0;
   parsedata->ctx.clear();
@@ -257,13 +257,13 @@ static int ParseEpubSpineDocuments(
   unzFile css_scan_uf = unzOpen(archive_path.c_str());
 
   for (size_t i = 0; i < hrefs.size(); i++) {
-    if (open_cancel_poll::Poll(book, app, "epub-spine-loop")) {
+    if (open_cancel_poll::Poll(book, reporter, "epub-spine-loop")) {
       rc = BOOK_ERR_CANCELLED;
       break;
     }
     if (book->GetPageCount() >= epub_limits::kMaxPagesInMemory) {
-      if (app) {
-        DBG_LOGF(app,
+      if (reporter) {
+        DBG_LOGF(reporter,
                  "EPUB: page limit reached pages=%u limit=%u spine=%u/%u",
                  (unsigned)book->GetPageCount(),
                  (unsigned)epub_limits::kMaxPagesInMemory,
@@ -279,7 +279,7 @@ static int ParseEpubSpineDocuments(
 
     std::string path = BuildDocPath(folder, href.c_str());
     std::string path_key = NormalizePath(path);
-    if (LocateZipEntrySafe(uf, path, app, "SPINE", &zip_index)) {
+    if (LocateZipEntrySafe(uf, path, reporter, "SPINE", &zip_index)) {
       u16 chapter_start_page = book->GetPageCount();
       std::string chapter_label = BuildChapterLabel(path, chapter_num);
 #ifdef DSLIBRIS_DEBUG
@@ -304,8 +304,8 @@ static int ParseEpubSpineDocuments(
         break;
       }
       if (parse_rc > 0) {
-        if (app) {
-          DBG_LOGF(app, "EPUB: spine doc xml-err=%d path=%s (skipped)",
+        if (reporter) {
+          DBG_LOGF(reporter, "EPUB: spine doc xml-err=%d path=%s (skipped)",
                    parse_rc, path.c_str());
       }
         rc = 0;
@@ -352,8 +352,8 @@ static int ParseEpubSpineDocuments(
         }
       }
 #ifdef DSLIBRIS_DEBUG
-      if (app && (spine_doc_index % 20 == 0 || spine_doc_index == 1)) {
-        DBG_LOGF(app, "EPUB: spine progress %u/%u pages=%u mem_free=%u",
+      if (reporter && (spine_doc_index % 20 == 0 || spine_doc_index == 1)) {
+        DBG_LOGF(reporter, "EPUB: spine progress %u/%u pages=%u mem_free=%u",
                  (unsigned)spine_doc_index, (unsigned)hrefs.size(),
                  (unsigned)book->GetPageCount(),
                  (unsigned)osGetMemRegionFree(MEMREGION_ALL));
@@ -363,14 +363,14 @@ static int ParseEpubSpineDocuments(
         book->NotifySpineProgress((unsigned)spine_doc_index,
                                   (unsigned)hrefs.size());
 #ifdef DSLIBRIS_DEBUG
-      if (app) {
+      if (reporter) {
         u64 doc_ms = osGetTime() - t_doc_begin;
         unsigned int pages_added =
             (unsigned int)(book->GetPageCount() - chapter_start_page);
         unsigned int anchors_added =
             (unsigned int)(book->GetChapterAnchorCount() - anchors_before);
         if (doc_ms >= 200 || pages_added >= 40 || anchors_added >= 100) {
-          DBG_LOGF(app,
+          DBG_LOGF(reporter,
                    "EPUB: spine doc %u/%u ms=%llums pages=%u anchors=%u path=%s",
                    (unsigned)spine_doc_index, (unsigned)hrefs.size(),
                    (unsigned long long)doc_ms, pages_added, anchors_added,
@@ -378,14 +378,14 @@ static int ParseEpubSpineDocuments(
         }
       }
 #endif
-      if (open_cancel_poll::Poll(book, app, "epub-spine-doc-done")) {
+      if (open_cancel_poll::Poll(book, reporter, "epub-spine-doc-done")) {
         rc = BOOK_ERR_CANCELLED;
         break;
       }
-    } else if (app) {
+    } else if (reporter) {
       char msg[256];
       snprintf(msg, sizeof(msg), "NOT FOUND IN ZIP: %s", path.c_str());
-      DBG_LOG(app, msg);
+      DBG_LOG(reporter, msg);
   }
   }
 
@@ -397,7 +397,7 @@ static int ParseEpubSpineDocuments(
 #ifdef DSLIBRIS_DEBUG
   if (t_after_content)
     *t_after_content = osGetTime();
-  if (app) {
+  if (reporter) {
     const text_layout_utils::PerfStats after =
         text_layout_utils::GetPerfStats();
     const epub_parse_perf::Snapshot parse_after = epub_parse_perf::Get();
@@ -437,7 +437,7 @@ static int ParseEpubSpineDocuments(
         spine_ms ? (unsigned)((chardata_ms * 100ULL) / spine_ms) : 0;
     const unsigned flush_pct =
         spine_ms ? (unsigned)((flush_ms * 100ULL) / spine_ms) : 0;
-    DBG_LOGF(app,
+    DBG_LOGF(reporter,
              "EPUB: spine breakdown total=%llums layout=%llums(%u%%) "
              "shape=%llums(%u%%) measure=%llums(%u%%) linebreak=%llums(%u%%) "
              "elem=%llums(%u%%)/%u chardata=%llums(%u%%)/%u "

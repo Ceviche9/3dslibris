@@ -115,6 +115,10 @@ struct Book::MuPdfState {
   bool worker_init_attempted;
   IStatusReporter *reporter;
   int page_too_complex_for_device; // page index skipped due to complexity, -1 if none
+  int interactive_render_failed_page;
+  int interactive_render_failed_zoom;
+  int final_render_failed_page;
+  int final_render_failed_zoom;
 
   MuPdfState()
       : target_top_width(240), target_top_height(400),
@@ -129,5 +133,7 @@ struct Book::MuPdfState {
         final_cache_pending(false), cached_display_list(NULL),
         cached_display_list_page(-1), prev_slot(), next_slot(), incremental(),
         worker(NULL), worker_init_attempted(false), reporter(NULL),
-        page_too_complex_for_device(-1) {}
+        page_too_complex_for_device(-1), interactive_render_failed_page(-1),
+        interactive_render_failed_zoom(-1), final_render_failed_page(-1),
+        final_render_failed_zoom(-1) {}
 };

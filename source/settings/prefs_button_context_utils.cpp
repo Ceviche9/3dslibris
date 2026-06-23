@@ -22,6 +22,15 @@ static const int kGeneralExtraButtons[] = {
     PREFS_BUTTON_CLEAR_CACHE,
 };
 
+static const int kGeneralStyleButtons[] = {
+    PREFS_BUTTON_FONT_CONFIG,
+    PREFS_BUTTON_FONTSIZE,
+    PREFS_BUTTON_LINE_SPACING,
+    PREFS_BUTTON_PARASPACING,
+    PREFS_BUTTON_PUBLISHER_TEXT_INDENT,
+    PREFS_BUTTON_PUBLISHER_BLOCK_MARGINS,
+};
+
 static const int kBookPrefsButtons[] = {
     PREFS_BUTTON_STYLE_CUSTOMIZATION,
     PREFS_BUTTON_TIME24H,
@@ -58,6 +67,31 @@ static const int kFixedLayoutBookPrefsPage2Buttons[] = {
 };
 
 } // namespace
+
+unsigned char PrefsPageButtonCount(const PrefsPageContext &context) {
+  if (!context.from_book && context.page == 1) {
+    return (unsigned char)(sizeof(kGeneralStyleButtons) /
+                           sizeof(kGeneralStyleButtons[0]));
+  }
+  if (!context.from_book && context.page == 2)
+    return ExtraPrefsButtonCount();
+  if (context.from_book && context.page == 1)
+    return BookPrefsPage2ButtonCount(context.fixed_layout);
+  return VisiblePrefsButtonCount(context.from_book,
+                                 context.include_line_wrap_fix);
+}
+
+int PrefsPageButtonForSlot(const PrefsPageContext &context,
+                           unsigned char slot) {
+  if (!context.from_book && context.page == 1)
+    return kGeneralStyleButtons[slot];
+  if (!context.from_book && context.page == 2)
+    return ExtraPrefsButtonForSlot(slot);
+  if (context.from_book && context.page == 1)
+    return BookPrefsPage2ButtonForSlot(context.fixed_layout, slot);
+  return PrefsButtonForVisibleSlot(context.from_book,
+                                   context.include_line_wrap_fix, slot);
+}
 
 unsigned char VisiblePrefsButtonCount(bool from_book,
                                       bool include_line_wrap_fix) {

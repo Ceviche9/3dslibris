@@ -3,6 +3,7 @@
 #include <stdint.h>
 
 class App;
+struct FrameInput;
 class Book;
 
 class ReaderController {
@@ -11,8 +12,8 @@ public:
 
   void CloseBook();
   int GetBookIndex(Book *book);
-  void HandleEventInBook();
-  void HandleEventInOpening();
+  void HandleEventInBook(const FrameInput &input);
+  void HandleEventInOpening(const FrameInput &input);
   unsigned char OpenBook();
   void ToggleBookmark();
   void OnAppletSuspendRequested();

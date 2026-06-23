@@ -9,6 +9,7 @@
 */
 
 #include "library/cover_cache.h"
+#include "library/cover_override_utils.h"
 
 #include <dirent.h>
 #include <list>
@@ -45,7 +46,7 @@ namespace {
 
 static const std::string &kCoverCacheBaseDir = paths::GetCacheBaseDir();
 static const std::string &kCoverCacheDir = paths::GetCoverCacheDir();
-static const char *kCoverCacheMagic = "CVR3";
+static const char *kCoverCacheMagic = "CVR4";
 static const size_t kCoverCacheMaxFiles = 512;
 static const size_t kCoverCacheMaxBytes = 16 * 1024 * 1024;
 
@@ -199,26 +200,8 @@ static std::string BuildCoverCachePath(Book *book,
       out_path->clear();
     if (path.empty())
       return false;
-    const size_t slash = path.find_last_of('/');
-    if (slash == std::string::npos)
-      return false;
-    std::string dir = path.substr(0, slash);
-    std::string filename = path.substr(slash + 1);
-    if (filename.empty())
-      return false;
-    size_t dot = filename.find_last_of('.');
-    std::string stem = (dot != std::string::npos && dot > 0)
-                           ? filename.substr(0, dot)
-                           : filename;
-    if (stem.empty())
-      return false;
-
-    std::vector<std::string> candidates;
-    candidates.reserve(4);
-    candidates.push_back(dir + "/" + stem + ".jpg");
-    candidates.push_back(dir + "/" + stem + ".png");
-    candidates.push_back(dir + "/" + stem + ".JPG");
-    candidates.push_back(dir + "/" + stem + ".PNG");
+    std::vector<std::string> candidates =
+        cover_override_utils::BuildBookCandidates(path);
 
     for (size_t i = 0; i < candidates.size(); i++) {
       if (IsRegularFilePath(candidates[i])) {
@@ -291,26 +274,11 @@ bool TryLoadAdjacentOverride(Book *book, const std::string &book_path) {
   if (!book || book_path.empty())
     return false;
 
-  const size_t slash = book_path.find_last_of('/');
-  if (slash == std::string::npos)
-    return false;
-  const std::string dir = book_path.substr(0, slash);
-  const std::string filename = book_path.substr(slash + 1);
-  if (filename.empty())
-    return false;
-  const size_t dot = filename.find_last_of('.');
-  const std::string stem =
-      (dot != std::string::npos && dot > 0) ? filename.substr(0, dot) : filename;
-  if (stem.empty())
-    return false;
-
-  const std::string candidates[] = {
-      dir + "/" + stem + ".jpg", dir + "/" + stem + ".png",
-      dir + "/" + stem + ".JPG", dir + "/" + stem + ".PNG",
-  };
+  const std::vector<std::string> candidates =
+      cover_override_utils::BuildBookCandidates(book_path);
 
   std::string chosen_path;
-  for (size_t i = 0; i < sizeof(candidates) / sizeof(candidates[0]); i++) {
+  for (size_t i = 0; i < candidates.size(); i++) {
     struct stat st;
     if (stat(candidates[i].c_str(), &st) == 0 && S_ISREG(st.st_mode)) {
       chosen_path = candidates[i];

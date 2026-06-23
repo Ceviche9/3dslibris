@@ -522,7 +522,9 @@ void EmitFlowedFragmentRaw(parsedata_t *p, const char *txt, int txtlen,
                 text_render_layout_utils::ResolveCompactReadingBottomMargin(
                     ts->margin.bottom));
         emit_metrics.screen_max_height_by_screen[s] = sm.max_height;
-        emit_metrics.screen_bottom_margin_by_screen[s] = sm.bottom_margin;
+        emit_metrics.screen_bottom_margin_by_screen[s] =
+            text_render_layout_utils::ApplyLineHeightPaginationGuard(
+                sm.bottom_margin, lineheight);
       }
       emit_metrics.display_width =
           emit_metrics.screen_width_by_screen[(p->screen >= 0 && p->screen < 2)
@@ -546,11 +548,32 @@ void EmitFlowedFragmentRaw(parsedata_t *p, const char *txt, int txtlen,
     if (ti.unit == MarginTopResult::Unit::None)
       ti = epub_css_class_map::LookupTextIndentForClassAttr(
           p->last_p_class, p->css_class_map);
-    // CSS text-indent is inherited — fall back to the parent div's class if
-    // neither the inline style nor the <p> class defines one.
+    if (ti.unit == MarginTopResult::Unit::None) {
+      epub_css_class_map::CssClassMargins tag_css;
+      if (epub_css_class_map::LookupAllForTag("p", p->css_class_map,
+                                               &tag_css))
+        ti = tag_css.text_indent;
+    }
+    // CSS text-indent is inherited. Resolve the paragraph itself first, then
+    // its active div and body ancestors.
+    if (ti.unit == MarginTopResult::Unit::None)
+      ti = book_xml_css_style_utils::ParseTextIndent(
+          p->last_div_style.c_str());
     if (ti.unit == MarginTopResult::Unit::None && !p->last_div_class.empty())
       ti = epub_css_class_map::LookupTextIndentForClassAttr(
           p->last_div_class, p->css_class_map);
+    if (ti.unit == MarginTopResult::Unit::None)
+      ti = book_xml_css_style_utils::ParseTextIndent(
+          p->last_body_style.c_str());
+    if (ti.unit == MarginTopResult::Unit::None && !p->last_body_class.empty())
+      ti = epub_css_class_map::LookupTextIndentForClassAttr(
+          p->last_body_class, p->css_class_map);
+    if (ti.unit == MarginTopResult::Unit::None) {
+      epub_css_class_map::CssClassMargins tag_css;
+      if (epub_css_class_map::LookupAllForTag("body", p->css_class_map,
+                                               &tag_css))
+        ti = tag_css.text_indent;
+    }
 // TEXTINDENT_TRACE: per-paragraph TextIndent diagnostics. Off by default;
 // fires once per paragraph (thousands per large EPUB), enough to slow parse
 // noticeably via fflush. Flip to 1 only when debugging text-indent rules.
@@ -612,12 +635,15 @@ void EmitFlowedFragmentRaw(parsedata_t *p, const char *txt, int txtlen,
               text_render_layout_utils::ResolveReadingScreenMetricsForOrientation(
                   p->book->GetOrientation(), p->screen, ts->margin.bottom,
                   text_render_layout_utils::ResolveCompactReadingBottomMargin(ts->margin.bottom));
+          const int bottom_margin =
+              text_render_layout_utils::ApplyLineHeightPaginationGuard(
+                  sm.bottom_margin, lh);
           const bool slot1 =
               text_render_layout_utils::CurrentLineFitsScreen(
-                  p->pen.y, lh, ls, sm.max_height, sm.bottom_margin);
+                  p->pen.y, lh, ls, sm.max_height, bottom_margin);
           const bool slot2 =
               text_render_layout_utils::HasRoomForFollowingLine(
-                  p->pen.y, lh, ls, sm.max_height, sm.bottom_margin);
+                  p->pen.y, lh, ls, sm.max_height, bottom_margin);
           bool one_line_paragraph = false;
           if (slot1 && !slot2 && IsSimpleParagraphTextFlush(p)) {
             one_line_paragraph = FlowedTextFitsCurrentVisualLine(
@@ -664,9 +690,12 @@ void EmitFlowedFragmentRaw(parsedata_t *p, const char *txt, int txtlen,
         text_render_layout_utils::ResolveReadingScreenMetricsForOrientation(
             p->book->GetOrientation(), p->screen, ts->margin.bottom,
             text_render_layout_utils::ResolveCompactReadingBottomMargin(ts->margin.bottom));
-    emit_metrics.overflow_threshold = sm.max_height - sm.bottom_margin;
     emit_metrics.screen_max_height = sm.max_height;
-    emit_metrics.screen_bottom_margin = sm.bottom_margin;
+    emit_metrics.screen_bottom_margin =
+        text_render_layout_utils::ApplyLineHeightPaginationGuard(
+            sm.bottom_margin, lineheight);
+    emit_metrics.overflow_threshold =
+        sm.max_height - emit_metrics.screen_bottom_margin;
   }
 
   if (white_space == book_xml_css_style_utils::WhiteSpaceMode::Pre ||

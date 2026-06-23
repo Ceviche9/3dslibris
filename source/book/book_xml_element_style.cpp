@@ -261,7 +261,8 @@ void EnsureBlockBoundaryBeforeBlockStart(parsedata_t *p, const char *tag,
             p->ts->GetHeight(),
             p->ts->linespacing,
             metrics.max_height,
-            metrics.bottom_margin);
+            text_render_layout_utils::ApplyLineHeightPaginationGuard(
+                metrics.bottom_margin, p->ts->GetHeight()));
 
     if (next_line_fits) {
       book_xml_screen_advance::Linefeed(p);

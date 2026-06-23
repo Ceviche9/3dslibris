@@ -1,0 +1,69 @@
+#include "settings/prefs_style_value_utils.h"
+
+#include <stdio.h>
+
+namespace settings {
+
+int EffectiveStyleValue(const StyleValueContext &context) {
+  if (context.from_book && context.override_value >= 0)
+    return context.override_value;
+  return context.global_value;
+}
+
+std::string FontSizeValueLabel(const StyleValueContext &context) {
+  if (context.from_book && !context.uses_text_layout)
+    return std::string("(PDF fixed)");
+
+  char label[64];
+  if (context.from_book && context.override_value < 0) {
+    snprintf(label, sizeof(label), "                  inherit < %d >",
+             context.global_value);
+  } else {
+    snprintf(label, sizeof(label), "                        < %d >  ",
+             EffectiveStyleValue(context));
+  }
+  return std::string(label);
+}
+
+std::string LineSpacingValueLabel(const StyleValueContext &context) {
+  if (context.from_book && !context.uses_text_layout)
+    return std::string("(PDF fixed)");
+
+  char label[64];
+  if (context.from_book && context.override_value < 0) {
+    snprintf(label, sizeof(label), "        inherit < %d pixels >",
+             context.global_value);
+  } else {
+    snprintf(label, sizeof(label), "               < %d pixels >  ",
+             EffectiveStyleValue(context));
+  }
+  return std::string(label);
+}
+
+std::string ParagraphSpacingValueLabel(const StyleValueContext &context) {
+  if (context.from_book && !context.uses_text_layout)
+    return std::string("(PDF fixed)");
+
+  char label[64];
+  if (context.from_book && context.override_value < 0) {
+    snprintf(label, sizeof(label), "          inherit < %d lines >",
+             context.global_value);
+  } else {
+    snprintf(label, sizeof(label), "                 < %d lines >  ",
+             EffectiveStyleValue(context));
+  }
+  return std::string(label);
+}
+
+std::string PublisherSettingValueLabel(bool from_book, bool uses_text_layout,
+                                       int override_value,
+                                       bool global_enabled,
+                                       bool effective_enabled) {
+  if (from_book && uses_text_layout && override_value < 0)
+    return global_enabled ? std::string("inherit on")
+                          : std::string("inherit off");
+  const bool enabled = from_book ? effective_enabled : global_enabled;
+  return enabled ? std::string("on") : std::string("off");
+}
+
+} // namespace settings
