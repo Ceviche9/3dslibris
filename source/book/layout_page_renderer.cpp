@@ -12,18 +12,11 @@
 namespace layout_page_renderer {
 
 void RenderPage(
-  const layout_engine::LayoutPage& page,
-  Text* text,
-  Book* book
+  Book* book,
+  Text* text
 ) {
   if (!text || !book) return;
   IStatusReporter *r = book->GetStatusReporter();
-
-  if (page.lines.empty()) {
-    DBG_LOGF_CAT(r, DBG_LEVEL_WARN, DBG_CAT_RENDER,
-                 "RENDER: RenderPage called with 0 lines book=%s",
-                 book->GetFileName() ? book->GetFileName() : "");
-  }
 
   // Initialize screen similar to Page::Draw
   text->InitPen();
@@ -33,8 +26,11 @@ void RenderPage(
   const unsigned char orientation = book->GetOrientation();
   const bool first_screen_is_left = orientation_utils::FirstScreenIsLeft(orientation);
   u16 *first_screen = first_screen_is_left ? text->screenleft : text->screenright;
+  u16 *second_screen = first_screen_is_left ? text->screenright : text->screenleft;
 
-  // Clear both screens
+  // Clear both screens unconditionally, regardless of how much content ends
+  // up on each - matches the old renderer, which always refreshes both
+  // physical screens on every page draw.
   text->SetScreen(text->screenleft);
   book->DrawTopGradientBackground();
   text->MarkScreenDirty(text->screenleft);
@@ -43,13 +39,34 @@ void RenderPage(
   book->DrawBottomGradientBackground();
   text->MarkScreenDirty(text->screenright);
 
-  // Start rendering on first screen
+  // A reading "spread" covers both physical screens (see
+  // Book::ComputeReflowSpread). This also re-sets Text::screen for each
+  // half's layout metrics, so re-set it again below before actually
+  // drawing on each screen.
+  const layout_engine::LayoutPage* screen1 = nullptr;
+  const layout_engine::LayoutPage* screen2 = nullptr;
+  book->ComputeReflowSpread(book->GetCurrentPageStart(), &screen1, &screen2);
+
+  if (!screen1 || screen1->lines.empty()) {
+    DBG_LOGF_CAT(r, DBG_LEVEL_WARN, DBG_CAT_RENDER,
+                 "RENDER: RenderPage screen1 0 lines book=%s",
+                 book->GetFileName() ? book->GetFileName() : "");
+  }
+
   text->SetScreen(first_screen);
   text->InitPen();
+  if (screen1) {
+    for (const auto& line : screen1->lines) {
+      RenderLine(line, text, book);
+    }
+  }
 
-  // Render all lines
-  for (const auto& line : page.lines) {
-    RenderLine(line, text, book);
+  if (screen2) {
+    text->SetScreen(second_screen);
+    text->InitPen();
+    for (const auto& line : screen2->lines) {
+      RenderLine(line, text, book);
+    }
   }
 }
 

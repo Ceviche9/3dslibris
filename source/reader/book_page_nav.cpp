@@ -18,7 +18,14 @@
 namespace book_nav {
 
 void DrawPage(Book *book, Text *ts) {
-  if (!book || !ts || book->GetPageCount() == 0)
+  if (!book || !ts)
+    return;
+  // GetPageCount() reflects the legacy Page vector, which the new layout
+  // engine never populates (pages are computed on-demand from doc_tree_).
+  // Gating the draw call on it here means the very first render after
+  // opening a new-engine book (from OpenBook) never fires - the screen
+  // just stays on whatever was showing before, looking frozen.
+  if (!book->UsesNewLayoutEngine() && book->GetPageCount() == 0)
     return;
   book_renderer::DrawCurrentView(book, ts);
 }
@@ -40,7 +47,17 @@ bool SetPage(Book *book, Text *ts, uint16_t page) {
 
 bool TurnPage(Book *book, Text *ts, uint16_t *pagecurrent, uint16_t pagecount,
               int delta) {
-  if (!book || !ts || !pagecurrent || pagecount == 0)
+  if (!book || !ts || !pagecurrent)
+    return false;
+  if (book->UsesNewLayoutEngine()) {
+    // No page index to seek by - *pagecurrent/pagecount are left untouched;
+    // callers that care about position re-read Book::GetPosition() fresh.
+    const bool moved = delta < 0 ? book->PrevReflowPage() : book->NextReflowPage();
+    if (moved)
+      DrawPage(book, ts);
+    return moved;
+  }
+  if (pagecount == 0)
     return false;
   if (delta < 0) {
     if (*pagecurrent == 0)

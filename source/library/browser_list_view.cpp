@@ -43,9 +43,14 @@ void DrawPage(const BrowserDrawContext &ctx, int page_start, int page_size) {
         ctx.ts->GetStyle());
 
     if (!(*ctx.books)[i]->IsBrowserFolder()) {
-      int pos = (*ctx.books)[i]->GetPosition();
+      Book *row_book = (*ctx.books)[i];
+      int pos = row_book->GetPosition();
       char msg[16];
-      if (pos > 0)
+      if (pos > 0 && row_book->UsesNewLayoutEngine())
+        // See browser_grid_view.cpp: `pos` here is a text-char offset for
+        // this engine, and no doc_tree_ exists yet to turn it into a %.
+        snprintf(msg, sizeof(msg), "...");
+      else if (pos > 0)
         snprintf(msg, sizeof(msg), "Pg %d", pos + 1);
       else
         snprintf(msg, sizeof(msg), "NEW");

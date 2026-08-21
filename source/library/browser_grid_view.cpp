@@ -249,9 +249,15 @@ void DrawPage(const BrowserDrawContext &ctx, BrowserGridMarqueeState &marquee,
     }
 
     if (!(*ctx.books)[i]->IsBrowserFolder()) {
-      int pos = (*ctx.books)[i]->GetPosition();
+      Book *row_book = (*ctx.books)[i];
+      int pos = row_book->GetPosition();
       char msg[16];
-      if (pos > 0)
+      if (pos > 0 && row_book->UsesNewLayoutEngine())
+        // Library rows haven't parsed the book yet (no doc_tree_), so a
+        // real % isn't available here without opening it. `pos` on this
+        // engine is a text-char offset, not a page - don't print it raw.
+        snprintf(msg, sizeof(msg), "...");
+      else if (pos > 0)
         snprintf(msg, sizeof(msg), "Pg %d", pos + 1);
       else
         snprintf(msg, sizeof(msg), "NEW");

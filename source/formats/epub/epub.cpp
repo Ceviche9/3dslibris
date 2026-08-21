@@ -471,14 +471,14 @@ static int ParseEpubSpineDocuments(
   if (css_scan_uf)
     unzClose(css_scan_uf);
 
-  // Initialize current page start for new layout engine
+  // Cache total text length for the new engine's progress %; the actual
+  // current_page_start_ is established post-open by book_parser.cpp once
+  // any saved reading position (Book::position) can be resolved against
+  // this now-parsed tree (see Book::SetPosition's new-engine branch).
   if (book->UsesNewLayoutEngine() && rc == 0) {
     content_tree::DocumentTree* tree = book->GetDocumentTree();
     if (tree && tree->root) {
-      layout_engine::PageStart start;
-      start.node = tree->root;
-      start.char_offset = 0;
-      book->SetCurrentPageStart(start);
+      book->SetReflowTotalChars(content_tree::CountTextChars(tree->root));
     }
   }
 #ifdef DSLIBRIS_DEBUG

@@ -87,7 +87,8 @@ void PageCache::InvalidateIfChanged(const layout_engine::LayoutMetrics& new_metr
       last_metrics_.base_margin_right != new_metrics.base_margin_right ||
       last_metrics_.base_margin_top != new_metrics.base_margin_top ||
       last_metrics_.base_margin_bottom != new_metrics.base_margin_bottom ||
-      last_metrics_.line_spacing != new_metrics.line_spacing) {
+      last_metrics_.line_spacing != new_metrics.line_spacing ||
+      last_metrics_.base_font_size != new_metrics.base_font_size) {
     changed = true;
   }
 
@@ -104,7 +105,7 @@ CacheKey PageCache::MakeKey(
   CacheKey key;
   key.node_id = reinterpret_cast<size_t>(start.node);
   key.char_offset = start.char_offset;
-  key.font_size = 16; // TODO: get from metrics
+  key.font_size = metrics.base_font_size;
   key.margin_left = metrics.base_margin_left;
   key.margin_right = metrics.base_margin_right;
   key.screen_width = metrics.screen_width;

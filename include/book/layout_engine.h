@@ -18,10 +18,14 @@ namespace layout_engine {
 struct PageStart {
   content_tree::ContentNode* node;
   size_t char_offset;
+  // Running count of text chars preceding this position in document order.
+  // Used to persist/resume reading position and compute progress % without
+  // a page index (the new engine has no fixed page count).
+  size_t global_offset;
 
-  PageStart() : node(nullptr), char_offset(0) {}
+  PageStart() : node(nullptr), char_offset(0), global_offset(0) {}
   PageStart(content_tree::ContentNode* n, size_t offset)
-    : node(n), char_offset(offset) {}
+    : node(n), char_offset(offset), global_offset(0) {}
 };
 
 // Layout metrics for page computation
@@ -34,6 +38,12 @@ struct LayoutMetrics {
   int base_margin_bottom;
   int line_spacing;       // extra spacing between lines
   int space_advance;      // width of space character
+  // Text's current base pixel size. Not used for layout math directly (per-
+  // node sizing already comes from ComputedStyle/measure_fn, both of which
+  // read the live Text state), but PageCache keys on it so a font-size
+  // change busts cached pages for the same (node, offset) instead of
+  // silently reusing ones shaped at the old size.
+  int base_font_size;
 
   text_layout_utils::MeasureCodepointFn measure_fn;
   void* measure_ctx;
@@ -47,6 +57,7 @@ struct LayoutMetrics {
       base_margin_bottom(36),
       line_spacing(3),
       space_advance(6),
+      base_font_size(16),
       measure_fn(nullptr),
       measure_ctx(nullptr)
   {}
@@ -134,13 +145,20 @@ struct LayoutContext {
   // Optional, only used for DSLIBRIS_DEBUG logging.
   IStatusReporter* reporter;
 
+  // Running count of text chars consumed so far in this ComputePage() call,
+  // relative to the document start (mirrors char_offset/glyph_idx
+  // bookkeeping but accumulated across nodes). Seeded from the PageStart
+  // that began this page; stamped onto page.end_position.global_offset.
+  size_t global_chars_consumed;
+
   LayoutContext()
     : pen_x(0),
       pen_y(0),
       current_line_height(0),
       current_line_baseline(0),
       lang("en"),
-      reporter(nullptr)
+      reporter(nullptr),
+      global_chars_consumed(0)
   {}
 };
 
@@ -158,16 +176,19 @@ public:
   );
 
 private:
-  // Layout a node and its children
-  void LayoutNode(
+  // Layout a node and its children. Returns true if the page became full
+  // while doing so (caller must stop); false if the node (and everything
+  // under it) was fully laid out and the caller should move on to whatever
+  // comes next in document order.
+  bool LayoutNode(
     content_tree::ContentNode* node,
     LayoutContext& ctx,
     LayoutPage& page,
     size_t start_offset
   );
 
-  // Layout text node
-  void LayoutTextNode(
+  // Layout text node. Same true/false contract as LayoutNode().
+  bool LayoutTextNode(
     content_tree::ContentNode* node,
     LayoutContext& ctx,
     LayoutPage& page,
@@ -179,6 +200,17 @@ private:
     const content_tree::ComputedStyle& style,
     LayoutContext& ctx
   );
+
+  // Reconstructs the BlockContext stack for every IsBlock() ancestor of
+  // `node` (walking up via ContentNode::parent), so a page that starts
+  // mid-document - not at tree root - still gets correct margins/indent.
+  // Does not touch pen_y (ancestors' top margins were already consumed on
+  // an earlier page) and forces first_line=false on every reconstructed
+  // level (never re-apply text-indent on a resumed/continued block).
+  std::vector<BlockContext> BuildBlockStackForNode(
+    content_tree::ContentNode* node,
+    const LayoutMetrics& metrics
+  ) const;
 
   // Pop block context and add bottom margin
   void ExitBlock(

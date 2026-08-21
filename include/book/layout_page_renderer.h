@@ -12,11 +12,12 @@ class Book;
 
 namespace layout_page_renderer {
 
-// Render a layout page to screen using Text renderer
+// Renders the current reading spread (both physical 3DS screens - see
+// Book::ComputeReflowSpread for why one LayoutPage is only ever one
+// screen's worth of content) using the Text renderer.
 void RenderPage(
-  const layout_engine::LayoutPage& page,
-  Text* text,
-  Book* book
+  Book* book,
+  Text* text
 );
 
 // Render a single line

@@ -26,14 +26,22 @@ bool CanDrawCbz(Book *book) { return book && book->IsCbz(); }
 void DrawCbz(Book *book, Text *text) { book->DrawCurrentCbzView(text); }
 
 bool CanDrawReflow(Book *book) {
-  return book && !book->IsFixedLayout() && book->GetPageCount() > 0;
+  if (!book || book->IsFixedLayout())
+    return false;
+  // GetPageCount() reflects the legacy Page vector, which the new engine
+  // never populates - gating on it here means DrawReflow is never actually
+  // reached for a new-engine book, and the reader screen just keeps
+  // whatever was drawn there before (readiness is already checked at open
+  // time via Book::HasOpenableContent()).
+  if (book->UsesNewLayoutEngine())
+    return true;
+  return book->GetPageCount() > 0;
 }
 
 void DrawReflow(Book *book, Text *text) {
   if (book->UsesNewLayoutEngine()) {
-    // New layout engine: compute page on-demand and render
-    const layout_engine::LayoutPage& page = book->ComputeCurrentLayoutPage();
-    layout_page_renderer::RenderPage(page, text, book);
+    // New layout engine: compute the spread on-demand and render it
+    layout_page_renderer::RenderPage(book, text);
   } else {
     // Old page-based rendering
     book->GetPage()->Draw(text);

@@ -21,6 +21,7 @@
 #include "formats/epub/epub_page_cache.h"
 #include "formats/mobi/mobi_page_cache.h"
 #include "shared/main.h"
+#include "shared/orientation_utils.h"
 #include "book/page.h"
 #include "book/page_buffer_utils.h"
 #include "parse.h"
@@ -142,6 +143,7 @@ Book::Book(const BookContext &c) : ctx(c) {
   doc_tree_ = nullptr;
   use_new_layout_engine_ = true;  // Enable new layout engine by default for reflow
   current_page_start_ = layout_engine::PageStart();
+  reflow_total_chars_ = 0;
   page_cache_.SetMaxSize(5);
 }
 
@@ -718,6 +720,35 @@ void Book::SetPage(u16 index) {
 }
 
 void Book::SetPosition(int pos) {
+  if (UsesNewLayoutEngine()) {
+    if (pos < 0)
+      pos = 0;
+    if (doc_tree_) {
+      const size_t total = GetReflowTotalChars();
+      if (total > 0 && (size_t)pos > total)
+        pos = (int)total;
+      const content_tree::DocumentTree::Bookmark bm =
+          doc_tree_->FindNodeByGlobalOffset((size_t)pos);
+      layout_engine::PageStart ps;
+      if (bm.IsValid()) {
+        ps = layout_engine::PageStart(bm.node, bm.char_offset_in_node);
+      } else {
+        // Empty tree, or offset landed past the last text node - fall back
+        // to the start of the document rather than an invalid position.
+        ps = layout_engine::PageStart(doc_tree_->root, 0);
+        pos = 0;
+      }
+      ps.global_offset = (size_t)pos;
+      current_page_start_ = ps;
+      reflow_page_history_.clear();
+    }
+    // else: called before the book is parsed (prefs load) - nothing to
+    // resolve against yet, just remember the raw value for the post-open
+    // resolve step in book_parser.cpp.
+    position = pos;
+    return;
+  }
+
   const int prev = position;
   const int next = ClampPositionToPageCount(pos, GetPageCount());
   position = next;
@@ -899,6 +930,8 @@ void Book::Close() {
   }
   page_cache_.InvalidateAll();
   current_page_start_ = layout_engine::PageStart();
+  reflow_page_history_.clear();
+  reflow_total_chars_ = 0;
 }
 
 void Book::ResetCbzFailureState() {
@@ -1026,7 +1059,11 @@ static int MeasureCodepointForLayout(uint32_t cp, void* ctx) {
 }
 
 bool Book::UsesNewLayoutEngine() const {
-  return use_new_layout_engine_ && format != FORMAT_PDF && !IsCbz();
+  // Only the EPUB parser builds a DocumentTree today; every other format
+  // (mobi, fb2, txt, rtf, odt, markdown, ...) still produces legacy Pages.
+  // Returning true for those would make DrawReflow call
+  // ComputeCurrentLayoutPage() against a null doc_tree_ and render blank.
+  return use_new_layout_engine_ && format == FORMAT_EPUB;
 }
 
 content_tree::DocumentTree* Book::GetDocumentTree() {
@@ -1048,16 +1085,7 @@ layout_engine::LayoutEngine* Book::GetLayoutEngine() {
   return &layout_engine_;
 }
 
-const layout_engine::LayoutPage& Book::ComputeCurrentLayoutPage() {
-  IStatusReporter *r = GetStatusReporter();
-  if (!doc_tree_) {
-    DBG_LOGF(r, "LAYOUT: ComputeCurrentLayoutPage no doc_tree_ book=%s",
-             filename.c_str());
-    static layout_engine::LayoutPage empty_page;
-    return empty_page;
-  }
-
-  // Configure metrics from current Text settings
+layout_engine::LayoutMetrics Book::BuildCurrentLayoutMetrics() {
   layout_engine::LayoutMetrics metrics;
   Text* text = GetText();
   if (text) {
@@ -1068,23 +1096,122 @@ const layout_engine::LayoutPage& Book::ComputeCurrentLayoutPage() {
     metrics.base_margin_top = text->margin.top;
     metrics.base_margin_bottom = text->margin.bottom;
     metrics.line_spacing = text->linespacing;
+    metrics.base_font_size = text->GetPixelSize();
     metrics.measure_fn = MeasureCodepointForLayout;
     metrics.measure_ctx = text;
   } else {
-    DBG_LOGF(r, "LAYOUT: ComputeCurrentLayoutPage no Text renderer book=%s",
+    DBG_LOGF(GetStatusReporter(),
+             "LAYOUT: BuildCurrentLayoutMetrics no Text renderer book=%s",
              filename.c_str());
   }
+  return metrics;
+}
 
-  if (!current_page_start_.node) {
-    DBG_LOGF(r, "LAYOUT: ComputeCurrentLayoutPage current_page_start_ unset "
-                "book=%s tree_root=%p",
+const layout_engine::LayoutPage& Book::ComputeCurrentLayoutPage() {
+  return ComputeLayoutPageFrom(current_page_start_);
+}
+
+const layout_engine::LayoutPage& Book::ComputeLayoutPageFrom(
+    const layout_engine::PageStart& start) {
+  IStatusReporter *r = GetStatusReporter();
+  if (!doc_tree_) {
+    DBG_LOGF(r, "LAYOUT: ComputeLayoutPageFrom no doc_tree_ book=%s",
+             filename.c_str());
+    static layout_engine::LayoutPage empty_page;
+    return empty_page;
+  }
+  if (!start.node) {
+    DBG_LOGF(r, "LAYOUT: ComputeLayoutPageFrom null start-node book=%s "
+                "tree_root=%p",
              filename.c_str(), (void*)doc_tree_->root);
+    static layout_engine::LayoutPage empty_page;
+    return empty_page;
   }
 
-  // Get page from cache (or compute)
-  return page_cache_.GetPage(current_page_start_, metrics, &layout_engine_, r);
+  const layout_engine::LayoutMetrics metrics = BuildCurrentLayoutMetrics();
+  return page_cache_.GetPage(start, metrics, &layout_engine_, r);
+}
+
+// Both physical 3DS screens make up one reading "spread" - the reader has
+// always shown two screens' worth of content per page turn (top=first
+// screen, bottom=second, like an open book), and Text::LogicalHeight()
+// only ever reports a single screen's height. So one LayoutPage never
+// covers a full spread; this computes the pair, continuing screen2 from
+// wherever screen1's own page-full/end-of-node logic left off. *out_screen2
+// stays null if the book ends within screen1 - there is nothing to show on
+// the second screen (still valid: the spread is just shorter than usual).
+void Book::ComputeReflowSpread(const layout_engine::PageStart& start,
+                                const layout_engine::LayoutPage** out_screen1,
+                                const layout_engine::LayoutPage** out_screen2) {
+  *out_screen1 = nullptr;
+  *out_screen2 = nullptr;
+  if (!doc_tree_ || !start.node)
+    return;
+
+  Text* text = GetText();
+  const bool first_is_left =
+      orientation_utils::FirstScreenIsLeft(GetOrientation());
+  if (text)
+    text->SetScreen(first_is_left ? text->screenleft : text->screenright);
+  const layout_engine::LayoutPage& screen1 = ComputeLayoutPageFrom(start);
+  *out_screen1 = &screen1;
+
+  if (screen1.end_position.node) {
+    if (text)
+      text->SetScreen(first_is_left ? text->screenright : text->screenleft);
+    const layout_engine::LayoutPage& screen2 =
+        ComputeLayoutPageFrom(screen1.end_position);
+    *out_screen2 = &screen2;
+  }
 }
 
 void Book::InvalidateLayoutCache() {
   page_cache_.InvalidateAll();
+}
+
+bool Book::HasOpenableContent() {
+  if (UsesNewLayoutEngine())
+    return doc_tree_ && content_tree::CountTextChars(doc_tree_->root) > 0;
+  return GetPageCount() > 0;
+}
+
+void Book::ApplyReflowPosition(const layout_engine::PageStart &ps) {
+  current_page_start_ = ps;
+  position = (int)ps.global_offset;
+}
+
+bool Book::NextReflowPage() {
+  if (!doc_tree_)
+    return false;
+  const layout_engine::LayoutPage* screen1 = nullptr;
+  const layout_engine::LayoutPage* screen2 = nullptr;
+  ComputeReflowSpread(current_page_start_, &screen1, &screen2);
+  const layout_engine::PageStart next_start =
+      screen2 ? screen2->end_position : layout_engine::PageStart();
+  if (!next_start.node) {
+    DBG_LOGF(GetStatusReporter(), "REFLOW: NextReflowPage at-last-page book=%s",
+             filename.c_str());
+    return false;
+  }
+  reflow_page_history_.push_back(current_page_start_);
+  ApplyReflowPosition(next_start);
+  return true;
+}
+
+bool Book::PrevReflowPage() {
+  if (reflow_page_history_.empty()) {
+    DBG_LOGF(GetStatusReporter(), "REFLOW: PrevReflowPage at-first-page book=%s",
+             filename.c_str());
+    return false;
+  }
+  const layout_engine::PageStart ps = reflow_page_history_.back();
+  reflow_page_history_.pop_back();
+  ApplyReflowPosition(ps);
+  return true;
+}
+
+size_t Book::GetReflowTotalChars() const { return reflow_total_chars_; }
+
+void Book::SetReflowTotalChars(size_t total_chars) {
+  reflow_total_chars_ = total_chars;
 }

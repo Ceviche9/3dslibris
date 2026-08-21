@@ -159,8 +159,16 @@ uint8_t OpenPrepared(Book *book) {
     err = Parse(book, true);
   }
 
-  if (!err && book->GetPosition() > (int)book->GetPageCount())
-    book->SetPosition((int)book->GetPageCount() - 1);
+  if (!err) {
+    if (book->UsesNewLayoutEngine()) {
+      // Re-resolve the saved position (a global char offset for this
+      // engine) now that doc_tree_ exists - SetPosition() no-op'd earlier
+      // when called from prefs load, before the tree was parsed.
+      book->SetPosition(book->GetPosition());
+    } else if (book->GetPosition() > (int)book->GetPageCount()) {
+      book->SetPosition((int)book->GetPageCount() - 1);
+    }
+  }
   return err;
 }
 

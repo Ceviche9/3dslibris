@@ -145,6 +145,20 @@ private:
   page_cache::PageCache page_cache_;
   layout_engine::PageStart current_page_start_;
   bool use_new_layout_engine_;
+  // Back-navigation stack for the new engine (PageStart has no fixed page
+  // index to compute "previous page" from, so we remember where we've been).
+  std::vector<layout_engine::PageStart> reflow_page_history_;
+  // Total text chars in the DocumentTree, cached once after parse; used as
+  // the denominator for progress % and to clamp SetPosition() (which reuses
+  // `position` as a global char offset for new-engine books).
+  size_t reflow_total_chars_;
+
+  // Sets current_page_start_/position directly from an already-known
+  // PageStart (no tree walk, no cache invalidation) - used by
+  // NextReflowPage()/PrevReflowPage() where the target is already known.
+  void ApplyReflowPosition(const layout_engine::PageStart &ps);
+
+  layout_engine::LayoutMetrics BuildCurrentLayoutMetrics();
 
   MuPdfState *mupdf_state;
   CbzState *cbz_state;
@@ -483,9 +497,39 @@ public:
   content_tree::DocumentTree* GetDocumentTree();
   void SetDocumentTree(content_tree::DocumentTree* tree);
   void SetCurrentPageStart(const layout_engine::PageStart& start);
+  const layout_engine::PageStart& GetCurrentPageStart() const {
+    return current_page_start_;
+  }
   layout_engine::LayoutEngine* GetLayoutEngine();
+  // Computes the LayoutPage at current_page_start_, using whatever screen
+  // Text::screen currently points to for sizing. Prefer ComputeReflowSpread()
+  // for rendering/navigation - this is a lower-level building block.
   const layout_engine::LayoutPage& ComputeCurrentLayoutPage();
+  const layout_engine::LayoutPage& ComputeLayoutPageFrom(
+      const layout_engine::PageStart& start);
+  // Computes both halves of a two-screen reading spread starting at `start`
+  // (see book.cpp for why one LayoutPage is only ever one physical screen's
+  // worth of content). Sets Text::screen as a side effect. *out_screen2 is
+  // left null when the book ends within *out_screen1.
+  void ComputeReflowSpread(const layout_engine::PageStart& start,
+                            const layout_engine::LayoutPage** out_screen1,
+                            const layout_engine::LayoutPage** out_screen2);
   void InvalidateLayoutCache();
+
+  // True if the book parsed any content to show. On the new engine,
+  // GetPageCount() is always 0 (content lives in the DocumentTree, not the
+  // legacy Page vector), so open-success checks must go through this
+  // instead of comparing GetPageCount() to zero.
+  bool HasOpenableContent();
+
+  // New engine page navigation. There is no fixed page index to seek by, so
+  // forward moves to LayoutPage::end_position and back pops a history
+  // stack recorded on the way forward. Returns false at the first/last page.
+  bool NextReflowPage();
+  bool PrevReflowPage();
+
+  size_t GetReflowTotalChars() const;
+  void SetReflowTotalChars(size_t total_chars);
 };
 
 #include "formats/cbz/cbz_state.h"

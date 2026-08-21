@@ -10,6 +10,27 @@
 
 namespace layout_engine {
 
+namespace {
+
+// Next node after `node` (and everything under it) in document order:
+// node's next sibling, or - if it has none - the next sibling of the
+// nearest ancestor that has one. Returns nullptr once there is nothing
+// left in the whole tree (true end of document).
+content_tree::ContentNode* NextInDocumentOrder(content_tree::ContentNode* node) {
+  while (node && node->parent) {
+    std::vector<content_tree::ContentNode*>& siblings = node->parent->children;
+    auto it = std::find(siblings.begin(), siblings.end(), node);
+    if (it != siblings.end()) {
+      ++it;
+      if (it != siblings.end()) return *it;
+    }
+    node = node->parent;
+  }
+  return nullptr;
+}
+
+} // namespace
+
 LayoutEngine::LayoutEngine() {
 }
 
@@ -35,18 +56,50 @@ LayoutPage LayoutEngine::ComputePage(
 
   LayoutContext ctx;
   ctx.metrics = metrics;
-  ctx.pen_x = metrics.base_margin_left;
+  ctx.reporter = reporter;
+  ctx.global_chars_consumed = start.global_offset;
   ctx.pen_y = metrics.base_margin_top;
   ctx.current_line_height = 0;
   ctx.current_line_baseline = 0;
-  ctx.reporter = reporter;
 
-  // Start layout from given node and offset
-  LayoutNode(start.node, ctx, page, start.char_offset);
+  // Walk forward in document order starting at (start.node, start.char_offset)
+  // until the page fills up or there is nothing left. LayoutNode() only lays
+  // out one node (and its own descendants); it never continues on to that
+  // node's siblings by itself, so that has to happen here - otherwise
+  // resuming mid-document (which is the normal case for every page after
+  // the first) stops after a single node even when the page still has room.
+  content_tree::ContentNode* current = start.node;
+  size_t offset = start.char_offset;
+  bool page_full = false;
+  while (current) {
+    // Rebuild the ancestor block/margin stack for THIS node every time,
+    // not just once at the top of the function. EnterBlock()/ExitBlock()
+    // stay balanced across a single LayoutNode() call's own recursion, but
+    // NextInDocumentOrder() can jump sideways to a sibling (or an ancestor's
+    // sibling) outside that recursion - reusing the previous node's stack
+    // there applied a stale ancestor's margin to every following block,
+    // shrinking available width until lines broke after almost every word.
+    ctx.block_stack = BuildBlockStackForNode(current, metrics);
+    if (ctx.current_line.empty()) {
+      ctx.pen_x = ctx.block_stack.empty()
+                      ? metrics.base_margin_left
+                      : ctx.block_stack.back().effective_margin_left;
+    }
+    page_full = LayoutNode(current, ctx, page, offset);
+    offset = 0;
+    if (page_full) break;
+    current = NextInDocumentOrder(current);
+  }
 
   // Commit any pending line
   if (!ctx.current_line.empty()) {
     CommitLine(ctx, page);
+  }
+
+  if (!current) {
+    // Walked off the end of the whole tree - this really is the last page,
+    // regardless of whatever the last node's own bookkeeping left behind.
+    page.end_position = PageStart();
   }
 
   if (page.lines.empty()) {
@@ -60,30 +113,29 @@ LayoutPage LayoutEngine::ComputePage(
   return page;
 }
 
-void LayoutEngine::LayoutNode(
+bool LayoutEngine::LayoutNode(
   content_tree::ContentNode* node,
   LayoutContext& ctx,
   LayoutPage& page,
   size_t start_offset
 ) {
-  if (!node) return;
+  if (!node) return false;
 
   // Skip if display:none
-  if (node->style.display == 2) return;
+  if (node->style.display == 2) return false;
 
   // Skip non-visual elements
   if (!node->tag_name.empty()) {
     if (node->tag_name == "head" || node->tag_name == "script" ||
         node->tag_name == "style" || node->tag_name == "meta" ||
         node->tag_name == "link" || node->tag_name == "title") {
-      return;
+      return false;
     }
   }
 
   // Handle TEXT nodes
   if (node->type == content_tree::ContentNode::TEXT) {
-    LayoutTextNode(node, ctx, page, start_offset);
-    return;
+    return LayoutTextNode(node, ctx, page, start_offset);
   }
 
   // Handle BLOCK nodes
@@ -97,13 +149,17 @@ void LayoutEngine::LayoutNode(
 
     // Layout children
     for (auto* child : node->children) {
-      LayoutNode(child, ctx, page, 0);
+      if (LayoutNode(child, ctx, page, 0)) {
+        // Child already set page.end_position itself; just propagate.
+        return true;
+      }
 
       // If page is full, stop
       if (!ctx.current_line.empty() && !LineWouldFit(ctx.pen_y, ctx.current_line_height, ctx)) {
         CommitLine(ctx, page);
         page.end_position = PageStart(child, 0);
-        return;
+        page.end_position.global_offset = ctx.global_chars_consumed;
+        return true;
       }
     }
 
@@ -113,27 +169,34 @@ void LayoutEngine::LayoutNode(
     }
 
     ExitBlock(node->style, ctx);
-    return;
+    return false;
   }
 
   // Handle INLINE nodes - layout children inline
   for (auto* child : node->children) {
-    LayoutNode(child, ctx, page, 0);
+    if (LayoutNode(child, ctx, page, 0))
+      return true;
   }
+  return false;
 }
 
-void LayoutEngine::LayoutTextNode(
+bool LayoutEngine::LayoutTextNode(
   content_tree::ContentNode* node,
   LayoutContext& ctx,
   LayoutPage& page,
   size_t start_offset
 ) {
-  if (!node || node->text_utf8.empty()) return;
+  if (!node || node->text_utf8.empty()) return false;
+
+  // Global offset at (node, start_offset), i.e. before any glyph in this
+  // call has been consumed. Deltas of glyph_idx below apply equally to the
+  // node-relative offset (start_offset + glyph_idx) and this baseline.
+  const size_t node_start_global = ctx.global_chars_consumed;
 
   const char* text = node->text_utf8.c_str() + start_offset;
   size_t remaining_len = node->text_utf8.size() - start_offset;
 
-  if (remaining_len == 0) return;
+  if (remaining_len == 0) return false;
 
   // Shape the text
   std::vector<text_layout_utils::ShapedGlyph> glyphs;
@@ -147,10 +210,10 @@ void LayoutEngine::LayoutTextNode(
                  "LAYOUT: shape failed node=%p len=%u measure_fn=%p",
                  (void*)node, (unsigned)remaining_len,
                  (void*)ctx.metrics.measure_fn);
-    return;
+    return false;
   }
 
-  if (glyphs.empty()) return;
+  if (glyphs.empty()) return false;
 
   // Get current block context
   BlockContext block_ctx;
@@ -166,6 +229,18 @@ void LayoutEngine::LayoutTextNode(
                         block_ctx.effective_margin_left -
                         block_ctx.effective_margin_right;
 
+  DBG_LOGF_CAT(ctx.reporter, DBG_LEVEL_DEBUG, DBG_CAT_LAYOUT,
+               "LAYOUT: width-calc parent_tag=%s screen_w=%d margin_l=%d "
+               "margin_r=%d avail_w=%d font_sz=%d line_h=%d stack_depth=%u "
+               "glyph0_adv=%d glyph0_cp=%u",
+               (node->parent && !node->parent->tag_name.empty())
+                   ? node->parent->tag_name.c_str() : "?",
+               ctx.metrics.screen_width, block_ctx.effective_margin_left,
+               block_ctx.effective_margin_right, available_width,
+               node->style.font_size, node->style.line_height,
+               (unsigned)ctx.block_stack.size(), glyphs[0].advance,
+               (unsigned)glyphs[0].text.codepoint);
+
   // Apply text-indent on first line of block
   if (block_ctx.first_line && node->style.text_indent > 0) {
     ctx.pen_x += node->style.text_indent;
@@ -177,15 +252,32 @@ void LayoutEngine::LayoutTextNode(
     }
   }
 
+  const bool is_preformatted =
+      node->style.white_space == 1 || node->style.white_space == 3;
+
   // Process glyphs
   size_t glyph_idx = 0;
   while (glyph_idx < glyphs.size()) {
+    // FindLineBreakAndMeasure() stops AT the whitespace glyph right after
+    // each word (end_index == that glyph's own index, width == 0 for that
+    // call) rather than past it - it measures one word run per call and
+    // expects the caller to consume the separator before asking for the
+    // next word. Skipping it here (not for preformatted text, which needs
+    // to preserve spacing exactly) avoids re-querying with glyph_idx sitting
+    // on whitespace, which always looks like "nothing fits" (0 width) and
+    // previously forced a line break after every single word.
+    if (!is_preformatted && glyphs[glyph_idx].text.whitespace) {
+      ctx.pen_x += glyphs[glyph_idx].advance;
+      glyph_idx++;
+      continue;
+    }
+
     // Calculate how many glyphs fit on current line
     int remaining_width = available_width - (ctx.pen_x - block_ctx.effective_margin_left);
 
     // Find line break
     text_layout_utils::LineBreakMeasureResult break_result;
-    if (node->style.white_space == 1 || node->style.white_space == 3) {
+    if (is_preformatted) {
       // Preformatted - break at newlines
       break_result = text_layout_utils::FindPreformattedLineBreakAndMeasure(
         glyphs, glyph_idx, remaining_width);
@@ -204,7 +296,8 @@ void LayoutEngine::LayoutTextNode(
         if (!LineWouldFit(ctx.pen_y, node->style.line_height, ctx)) {
           // Page full - save position and return
           page.end_position = PageStart(node, start_offset + glyph_idx);
-          return;
+          page.end_position.global_offset = node_start_global + glyph_idx;
+          return true;
         }
 
         // Reset pen for new line
@@ -255,7 +348,8 @@ void LayoutEngine::LayoutTextNode(
 
       if (!LineWouldFit(ctx.pen_y, ctx.current_line_height, ctx)) {
         page.end_position = PageStart(node, start_offset + glyph_idx);
-        return;
+        page.end_position.global_offset = node_start_global + glyph_idx;
+        return true;
       }
 
       ctx.pen_x = block_ctx.effective_margin_left;
@@ -266,17 +360,22 @@ void LayoutEngine::LayoutTextNode(
 
       if (!LineWouldFit(ctx.pen_y, ctx.current_line_height, ctx)) {
         page.end_position = PageStart(node, start_offset + glyph_idx);
-        return;
+        page.end_position.global_offset = node_start_global + glyph_idx;
+        return true;
       }
 
       ctx.pen_x = block_ctx.effective_margin_left;
     }
   }
 
-  // Mark end of this text node
+  // Mark end of this text node, and advance the running global offset so
+  // the next node (sibling/parent's next child) starts counting from here.
+  ctx.global_chars_consumed = node_start_global + glyph_idx;
   if (glyph_idx >= glyphs.size()) {
     page.end_position = PageStart(node, node->text_utf8.size());
+    page.end_position.global_offset = ctx.global_chars_consumed;
   }
+  return false;
 }
 
 void LayoutEngine::EnterBlock(
@@ -307,6 +406,35 @@ void LayoutEngine::EnterBlock(
 
   // Reset pen x to new margin
   ctx.pen_x = block_ctx.effective_margin_left;
+}
+
+std::vector<BlockContext> LayoutEngine::BuildBlockStackForNode(
+  content_tree::ContentNode* node,
+  const LayoutMetrics& metrics
+) const {
+  std::vector<content_tree::ContentNode*> ancestors;
+  for (content_tree::ContentNode* p = node ? node->parent : nullptr; p;
+       p = p->parent) {
+    if (p->IsBlock()) ancestors.push_back(p);
+  }
+
+  std::vector<BlockContext> stack;
+  int margin_left = metrics.base_margin_left;
+  int margin_right = metrics.base_margin_right;
+  // ancestors is innermost-first; walk it in reverse for outermost-first,
+  // matching the accumulation order EnterBlock() uses when descending.
+  for (auto it = ancestors.rbegin(); it != ancestors.rend(); ++it) {
+    content_tree::ContentNode* blk = *it;
+    BlockContext block_ctx;
+    block_ctx.effective_margin_left = margin_left + blk->style.margin_left;
+    block_ctx.effective_margin_right = margin_right + blk->style.margin_right;
+    block_ctx.text_indent = blk->style.text_indent;
+    block_ctx.first_line = false;
+    stack.push_back(block_ctx);
+    margin_left = block_ctx.effective_margin_left;
+    margin_right = block_ctx.effective_margin_right;
+  }
+  return stack;
 }
 
 void LayoutEngine::ExitBlock(
