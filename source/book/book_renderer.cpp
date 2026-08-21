@@ -2,6 +2,7 @@
 
 #include "book/book.h"
 #include "book/page.h"
+#include "book/layout_page_renderer.h"
 
 #include <stddef.h>
 
@@ -25,10 +26,27 @@ bool CanDrawCbz(Book *book) { return book && book->IsCbz(); }
 void DrawCbz(Book *book, Text *text) { book->DrawCurrentCbzView(text); }
 
 bool CanDrawReflow(Book *book) {
-  return book && !book->IsFixedLayout() && book->GetPageCount() > 0;
+  if (!book || book->IsFixedLayout())
+    return false;
+  // GetPageCount() reflects the legacy Page vector, which the new engine
+  // never populates - gating on it here means DrawReflow is never actually
+  // reached for a new-engine book, and the reader screen just keeps
+  // whatever was drawn there before (readiness is already checked at open
+  // time via Book::HasOpenableContent()).
+  if (book->UsesNewLayoutEngine())
+    return true;
+  return book->GetPageCount() > 0;
 }
 
-void DrawReflow(Book *book, Text *text) { book->GetPage()->Draw(text); }
+void DrawReflow(Book *book, Text *text) {
+  if (book->UsesNewLayoutEngine()) {
+    // New layout engine: compute the spread on-demand and render it
+    layout_page_renderer::RenderPage(book, text);
+  } else {
+    // Old page-based rendering
+    book->GetPage()->Draw(text);
+  }
+}
 
 static const BookRendererEntry kBookRenderers[] = {
     {"mupdf", CanDrawMuPdf, DrawMuPdf},

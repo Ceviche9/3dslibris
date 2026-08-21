@@ -376,15 +376,21 @@ void ReaderController::HandleEventInOpening(const FrameInput &input)
   }
 
   const int pageCount = opening_book->GetPageCount();
+  // The new layout engine never populates the legacy Page vector, so
+  // GetPageCount() reads 0 even on a successful parse. Substitute a
+  // positive stand-in for the attach/failure-cause checks below, which only
+  // care whether the book has content, not the real page count.
+  const int attachPageCount =
+      opening_book->HasOpenableContent() ? (pageCount > 0 ? pageCount : 1) : 0;
   if (!ShouldAttachOpeningResult(opening_session_id,
                                  opening_book->GetOpenSessionId(),
                                  opening_book->IsOpenAbortRequested(),
-                                 pageCount))
+                                 attachPageCount))
   {
     boot_trace::Boot("async open attach denied");
     const char *cause = DescribeOpeningFailureCause(
         opening_session_id, opening_book->GetOpenSessionId(),
-        opening_book->IsOpenAbortRequested(), pageCount);
+        opening_book->IsOpenAbortRequested(), attachPageCount);
     DBG_LOGF(&app_,
              "BOOK attach denied: cause=%s session=%u book_session=%u pages=%d book=%s",
              cause, opening_session_id, opening_book->GetOpenSessionId(),
@@ -407,11 +413,17 @@ void ReaderController::HandleEventInOpening(const FrameInput &input)
            SafeBookName(bookcurrent_));
   DBG_LOGF(&app_, "Generated %d pages", pageCount);
 
+  // See the matching comment in app_book_open.cpp: the new engine's
+  // position is a font/margin-independent character offset, already
+  // restored by the post-open resolve in book_parser.cpp - the page-index
+  // remap math here doesn't apply and would just reset it to 0.
   deferred_relayout_utils::OpenRelayoutPlan open_plan =
-      deferred_relayout_utils::BuildOpenRelayoutPlan(
-          relayout_state.needs_relayout, false,
-          relayout_state.old_page_count, relayout_state.old_position, pageCount,
-          relayout_state.old_bookmarks);
+      bookcurrent_->UsesNewLayoutEngine()
+          ? deferred_relayout_utils::OpenRelayoutPlan()
+          : deferred_relayout_utils::BuildOpenRelayoutPlan(
+                relayout_state.needs_relayout, false,
+                relayout_state.old_page_count, relayout_state.old_position,
+                pageCount, relayout_state.old_bookmarks);
   if (open_plan.has_remap)
   {
     bookcurrent_->SetPosition(open_plan.mapped_position);

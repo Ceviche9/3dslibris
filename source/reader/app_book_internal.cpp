@@ -165,7 +165,14 @@ bool ReuseParsedBook(App *app) {
   ResetBookRenderState(app, true,
                        "OpenBook: reset text renderer state (reuse)");
   Book *current = app->GetCurrentBook();
-  if (current->GetPosition() >= current->GetPageCount())
+  // GetPageCount() is always 0 on the new engine, so this bounds check
+  // would always fire and silently reset the reading position back to the
+  // start every time a book got reused instead of re-parsed. Not needed
+  // there anyway - current_page_start_ is a (node, offset) into the
+  // DocumentTree, which stays valid across relayout (unlike a numeric page
+  // index, it isn't tied to how many pages the current font/margins produce).
+  if (!current->UsesNewLayoutEngine() &&
+      current->GetPosition() >= current->GetPageCount())
     current->SetPosition(0);
   book_nav::DrawPage(current, app->ts.get());
   return true;

@@ -243,13 +243,30 @@ App::~App()
   }
   LightLock_Unlock(&status_log_lock_);
 #ifdef DSLIBRIS_DEBUG
-  PrintStatus("APP ~App: deleting books");
+  {
+    char msg[64];
+    snprintf(msg, sizeof(msg), "APP ~App: deleting %u books",
+             (unsigned)books.size());
+    PrintStatus(msg);
+  }
 #endif
   // Delete all book instances to free resources.
   for (std::vector<Book *>::iterator it = books.begin(); it != books.end();
-       it++)
+       it++) {
+#ifdef DSLIBRIS_DEBUG
+    if (*it) {
+      char msg[128];
+      snprintf(msg, sizeof(msg), "APP ~App: deleting book file=%s",
+               (*it)->GetFileName() ? (*it)->GetFileName() : "");
+      PrintStatus(msg);
+    }
+#endif
     delete *it;
+  }
   books.clear();
+#ifdef DSLIBRIS_DEBUG
+  PrintStatus("APP ~App: books deleted");
+#endif
 #ifdef DSLIBRIS_DEBUG
   PrintStatus("APP ~App: deleting buttons");
 #endif

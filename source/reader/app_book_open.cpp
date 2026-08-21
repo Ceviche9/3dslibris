@@ -105,8 +105,12 @@ u8 ReaderController::OpenBook()
     TryPersistProgress(bookcurrent_, true);
   }
 
-  // Fast path: selected book is already parsed and resident.
-  if (selected_book->GetPageCount() > 0 && !needs_relayout &&
+  // Fast path: selected book is already parsed and resident. Uses
+  // HasOpenableContent() rather than GetPageCount() > 0 directly since the
+  // new engine never populates the legacy Page vector - that check alone
+  // would always be false and force a full re-parse every time, even for
+  // a book that's already open.
+  if (selected_book->HasOpenableContent() && !needs_relayout &&
       !selected_book->IsOpenAbortRequested())
   {
     boot_trace::Boot("open book reuse begin");
@@ -218,7 +222,7 @@ u8 ReaderController::OpenBook()
   int pageCount = bookcurrent_->GetPageCount();
   DBG_LOGF(&app_, "Generated %d pages", pageCount);
 
-  if (pageCount <= 0)
+  if (!bookcurrent_->HasOpenableContent())
   {
     boot_trace::Boot("open book pages zero");
     app_.PrintStatus("error: book has no parsed pages");
@@ -231,11 +235,20 @@ u8 ReaderController::OpenBook()
   }
 
   // Keep the reader roughly in the same part of the book after repagination.
+  // The remap math below is page-index based (proportionally maps an old
+  // page number onto the new page count) - meaningless for the new engine,
+  // which has no page count and whose position is a font/margin-independent
+  // character offset already restored correctly by the post-open resolve
+  // in book_parser.cpp. Applying it there would just overwrite that with
+  // RemapPageIndexApprox()'s new_page_count<=0 fallback of 0, silently
+  // jumping back to the start of the book on every settings-driven relayout.
   deferred_relayout_utils::OpenRelayoutPlan open_plan =
-      deferred_relayout_utils::BuildOpenRelayoutPlan(
-          relayout_state.needs_relayout, false,
-          relayout_state.old_page_count, relayout_state.old_position, pageCount,
-          relayout_state.old_bookmarks);
+      bookcurrent_->UsesNewLayoutEngine()
+          ? deferred_relayout_utils::OpenRelayoutPlan()
+          : deferred_relayout_utils::BuildOpenRelayoutPlan(
+                relayout_state.needs_relayout, false,
+                relayout_state.old_page_count, relayout_state.old_position,
+                pageCount, relayout_state.old_bookmarks);
   if (open_plan.has_remap)
   {
     bookcurrent_->SetPosition(open_plan.mapped_position);

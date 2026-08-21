@@ -122,12 +122,20 @@ void StatusController::UpdateStatus()
   }
 
   Book *current_book = app_.GetCurrentBook();
+  const bool current_is_new_engine =
+      current_book && current_book->UsesNewLayoutEngine();
   app_flow_utils::StatusSnapshot snapshot = {};
   if (mode == AppMode::Book)
   {
+    // The new engine has no fixed page count; ComputeStatusSnapshot's
+    // percent math (page_num / (count - 1)) is unit-agnostic, so feed it
+    // the global char offset / total chars instead of page index / count.
     snapshot = app_flow_utils::ComputeStatusSnapshot(
         {current_book, current_book ? (int)current_book->GetPosition() : 0,
-         current_book ? (int)current_book->GetPageCount() : 0,
+         current_book ? (current_is_new_engine
+                              ? (int)current_book->GetReflowTotalChars()
+                              : (int)current_book->GetPageCount())
+                      : 0,
          false,
          progress_lock_book_, progress_pagecount_lock_});
     progress_lock_book_ = const_cast<Book *>(snapshot.next_locked_book);
@@ -187,7 +195,14 @@ void StatusController::UpdateStatus()
     app_.ts->PrintString(tmsg);
 
     char page_msg[32] = {};
-    if (current_book && current_book->GetPageCount() > 0) {
+    if (current_is_new_engine && current_book->GetReflowTotalChars() > 0) {
+      const size_t total = current_book->GetReflowTotalChars();
+      const int pos = current_book->GetPosition();
+      const int percent =
+          (int)(((long long)pos * 100) / (long long)total);
+      snprintf(page_msg, sizeof(page_msg), "%d%%",
+               percent < 0 ? 0 : (percent > 100 ? 100 : percent));
+    } else if (current_book && current_book->GetPageCount() > 0) {
       snprintf(page_msg, sizeof(page_msg), "%d/%d",
                (int)current_book->GetPosition() + 1,
                (int)current_book->GetPageCount());
