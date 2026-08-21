@@ -2,6 +2,7 @@
 
 #include "book/book.h"
 #include "book/page.h"
+#include "book/layout_page_renderer.h"
 
 #include <stddef.h>
 
@@ -28,7 +29,16 @@ bool CanDrawReflow(Book *book) {
   return book && !book->IsFixedLayout() && book->GetPageCount() > 0;
 }
 
-void DrawReflow(Book *book, Text *text) { book->GetPage()->Draw(text); }
+void DrawReflow(Book *book, Text *text) {
+  if (book->UsesNewLayoutEngine()) {
+    // New layout engine: compute page on-demand and render
+    const layout_engine::LayoutPage& page = book->ComputeCurrentLayoutPage();
+    layout_page_renderer::RenderPage(page, text, book);
+  } else {
+    // Old page-based rendering
+    book->GetPage()->Draw(text);
+  }
+}
 
 static const BookRendererEntry kBookRenderers[] = {
     {"mupdf", CanDrawMuPdf, DrawMuPdf},

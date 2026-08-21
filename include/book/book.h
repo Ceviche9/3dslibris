@@ -16,6 +16,9 @@
 
 #include "book/book_context.h"
 #include "book/inline_image_layout.h"
+#include "book/content_node.h"
+#include "book/layout_engine.h"
+#include "book/page_cache.h"
 #include "shared/app_flow_utils.h"
 #include <3ds.h>
 #include <list>
@@ -135,6 +138,14 @@ private:
   // remaining callers are ready, ideally moving Page ownership to std::unique_ptr
   // and the cover thumbnail buffer to a safer RAII container.
   std::vector<Page *> pages; //! Owned page objects for the current parsed/open book.
+
+  // New layout architecture (for reflowable formats)
+  content_tree::DocumentTree* doc_tree_;
+  layout_engine::LayoutEngine layout_engine_;
+  page_cache::PageCache page_cache_;
+  layout_engine::PageStart current_page_start_;
+  bool use_new_layout_engine_;
+
   MuPdfState *mupdf_state;
   CbzState *cbz_state;
   ReflowWorkerState *reflow_worker_state;
@@ -466,6 +477,15 @@ public:
   bool IsOpenAbortRequested() const;
   void RequestAbortOpen();
   void ClearOpenAbortRequest();
+
+  // New layout architecture
+  bool UsesNewLayoutEngine() const;
+  content_tree::DocumentTree* GetDocumentTree();
+  void SetDocumentTree(content_tree::DocumentTree* tree);
+  void SetCurrentPageStart(const layout_engine::PageStart& start);
+  layout_engine::LayoutEngine* GetLayoutEngine();
+  const layout_engine::LayoutPage& ComputeCurrentLayoutPage();
+  void InvalidateLayoutCache();
 };
 
 #include "formats/cbz/cbz_state.h"

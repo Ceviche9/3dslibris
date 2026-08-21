@@ -1,0 +1,418 @@
+═══════════════════════════════════════════════════════════════════════════════
+    COMPARAÇÃO: ARQUITETURA ATUAL vs PROPOSTA KINDLE-LIKE
+═══════════════════════════════════════════════════════════════════════════════
+
+
+ARQUITETURA ATUAL (Fluxo de Dados)
+═══════════════════════════════════
+
+    book.epub
+       │
+       ▼
+  ┌────────────────┐
+  │  XML Parser    │  Expat callbacks em book_xml_parser.cpp
+  │                │  - Constrói parsedata_t "on the fly"
+  └────────┬───────┘  - CSS aplicado imediatamente
+           │
+           ▼
+  ┌────────────────────────────┐
+  │  EmitFlowedShapedText()    │  book_xml_text_emit.cpp
+  │  (DECISÕES DE LAYOUT AQUI) │  - Calcula quebras de linha
+  │                            │  - Decide paginação
+  │  • Shape glyphs            │  - EMITE tokens de controle
+  │  • Mede larguras           │
+  │  • Se ultrapassar width:   │
+  │      Emite '\n'            │
+  │  • Se ultrapassar height:  │
+  │      Chama AdvancePage()   │
+  │  • Emite TEXT_LINE_START_X │
+  └────────┬───────────────────┘
+           │
+           ▼
+  ┌─────────────────┐
+  │  Page.buf[]     │  Buffer de u32 (codepoints + tokens)
+  │  (u32 array)    │  [T][E][X][T][O]['\n'][TEXT_LINE_START_X][56][M][A][I][S]
+  └────────┬────────┘                           ↑ token de controle
+           │
+           ▼
+  ┌─────────────────┐
+  │  Page::Draw()   │  page.cpp
+  │  (Renderização) │  - Lê buffer linearmente
+  │                 │  - Interpreta tokens
+  └─────────────────┘
+
+
+PROBLEMA #1: Perda de Contexto Entre Páginas
+─────────────────────────────────────────────
+
+    <p style="margin-left: 40px">Parágrafo longo que quebra...</p>
+
+    PÁGINA 1 (durante parsing):
+    ┌─────────────────────────────────────────┐
+    │ EmitFlowedShapedText():                 │
+    │   metrics.margin_left = 16 + 40 = 56    │
+    │   p->pen.x = 56                         │
+    │   Emite: [TEXT_LINE_START_X][56]        │
+    │   Emite: [P][a][r][á][g][r][a][f][o]   │
+    │   ...altura excedida...                 │
+    │   Chama: AdvancePageOnOverflow()        │
+    └─────────────────────────────────────────┘
+
+    PÁGINA 2 (continua parsing):
+    ┌─────────────────────────────────────────┐
+    │ EmitFlowedShapedText():                 │
+    │   ❌ Variável metrics.margin_left       │
+    │      foi resetada ou perdida!           │
+    │   p->pen.x = 16 (base margin)           │
+    │   Emite: [l][o][n][g][o][...]           │  ← POSIÇÃO ERRADA!
+    │                                         │
+    │ Texto cortado/desalinhado na tela!      │
+    └─────────────────────────────────────────┘
+
+    SOLUÇÃO ATUAL: Desabilitar TEXT_LINE_START_X completamente
+    → Perde funcionalidade de indentação CSS ❌
+
+
+PROBLEMA #2: Buffer Inflexível
+────────────────────────────────
+
+    • Usuário muda tamanho de fonte 12pt → 16pt
+    • Sistema atual: Precisa RE-PARSE COMPLETO do EPUB
+      - Descompacta novamente
+      - Re-executa XML parser
+      - Re-calcula tudo
+
+    • Bookmarks apontam para offsets no buffer:
+      bookmark.position = 15234  (byte offset em Page.buf[])
+      - Se re-parse, offsets mudam!
+      - Bookmarks ficam inválidos ❌
+
+
+PROBLEMA #3: Hifenização Incompleta
+─────────────────────────────────────
+
+    // Em FindLineBreakImpl() (text_layout_utils.cpp:236)
+    // Código comentado:
+
+    if (width > max_width) {
+      if (have_break && last_break > start)
+        return LineBreakMeasureResult(last_break, width_at_last_break);
+
+      // REMOVED HYPHENATION CODE - was causing words to disappear
+      // ↑ PROBLEMA: Implementação tentava hifenizar mas PERDIA caracteres
+
+      // Exemplo:
+      // Palavra: "extraordinário"
+      // Tentava quebrar: "extraor-" + restante
+      // Mas não salvava "dinário" em lugar nenhum!
+      // Resultado: "extraordinário" → "extraor-" (resto sumiu) ❌
+    }
+
+
+
+
+═══════════════════════════════════════════════════════════════════════════════
+    NOVA ARQUITETURA PROPOSTA
+═══════════════════════════════════════════════════════════════════════════════
+
+
+    book.epub
+       │
+       ▼
+  ┌─────────────────────┐
+  │  XML Parser         │  Modificado: NÃO emite tokens
+  │  (DOM Builder)      │  Constrói árvore de ContentNodes
+  │                     │
+  │  <p margin-left=40> │  →  ContentNode {
+  │    Texto...         │        type: BLOCK,
+  │  </p>               │        style: { margin_left: 40 },
+  └─────────┬───────────┘        text_utf8: "Texto...",
+            │                    children: []
+            ▼                  }
+  ┌─────────────────────┐
+  │  DocumentTree       │  Persistente na memória
+  │  (Hierarquia)       │  - Preserva formatação original
+  │                     │  - Independente de layout
+  │  ContentNode* root  │  - Bookmarks apontam para nodes
+  └─────────┬───────────┘
+            │
+            │  (quando precisar renderizar página N)
+            │
+            ▼
+  ┌───────────────────────────┐
+  │  LayoutEngine             │  Calcula SOB DEMANDA
+  │  ComputePage(start, N)    │
+  │                           │  Input:
+  │  MANTÉM CONTEXTO:         │    • start_node
+  │  • block_stack            │    • char_offset
+  │  • effective_margin_left  │    • LayoutMetrics
+  │  • text_indent            │
+  │  • is_first_line          │  Output:
+  │                           │    • LayoutPage (linhas + fragmentos)
+  └─────────┬─────────────────┘    • end_position (onde parou)
+            │
+            ▼
+  ┌─────────────────────┐
+  │  PageCache          │  Cache volátil (últimas 5 páginas)
+  │  map<key, Layout>   │  - Invalida se settings mudarem
+  │                     │  - key = (page_num, font_size, margins)
+  └─────────┬───────────┘
+            │
+            ▼
+  ┌─────────────────────┐
+  │  Renderer           │  Desenha usando posições absolutas
+  │  DrawLayoutPage()   │  - Percorre line.fragments
+  │                     │  - Cada fragment tem x,y,glyphs
+  └─────────────────────┘
+
+
+SOLUÇÃO #1: Contexto Preservado
+────────────────────────────────
+
+    <p style="margin-left: 40px">Parágrafo longo que quebra...</p>
+
+    DocumentTree:
+    ┌─────────────────────────────────────┐
+    │ ContentNode {                       │
+    │   type: BLOCK,                      │
+    │   style: { margin_left: 40 },       │  ← PRESERVADO!
+    │   text_utf8: "Parágrafo longo..." │
+    │ }                                   │
+    └─────────────────────────────────────┘
+
+
+    PÁGINA 1:
+    ┌──────────────────────────────────────────┐
+    │ LayoutEngine::ComputePage(node, 0)       │
+    │                                          │
+    │ ctx.block_stack.push({                   │
+    │   effective_margin_left: 16 + 40 = 56    │ ← SALVO no stack
+    │ });                                      │
+    │                                          │
+    │ LayoutTextNode():                        │
+    │   pen.x = 56                             │
+    │   Adiciona fragments em x=56             │
+    │   ...página cheia...                     │
+    │   page.end_position = {node, offset=80}  │ ← Salva ONDE parou
+    └──────────────────────────────────────────┘
+
+
+    PÁGINA 2:
+    ┌──────────────────────────────────────────┐
+    │ LayoutEngine::ComputePage(node, 80)      │
+    │                                          │
+    │ Retoma do MESMO node!                    │
+    │ ctx.block_stack.push({                   │
+    │   effective_margin_left: 16 + 40 = 56    │ ← RECALCULADO do style!
+    │ });                                      │
+    │                                          │
+    │ LayoutTextNode():                        │
+    │   pen.x = 56                             │ ✅ CORRETO!
+    │   Continua de offset=80                  │
+    └──────────────────────────────────────────┘
+
+    ✅ Margens preservadas!
+    ✅ Indentação CSS funciona!
+
+
+SOLUÇÃO #2: Recálculo Eficiente
+────────────────────────────────
+
+    Usuário muda fonte 12pt → 16pt:
+
+    ┌──────────────────────────────────────┐
+    │ UpdateFontSize(16):                  │
+    │   1. Atualiza LayoutMetrics          │
+    │   2. PageCache.InvalidateAll()       │ ← Limpa cache
+    │   3. DocumentTree INTACTO            │ ← Não precisa re-parse!
+    │                                      │
+    │ RenderCurrentPage():                 │
+    │   4. ComputePage() recalcula com     │
+    │      nova fonte                      │
+    │   5. Desenha resultado               │
+    └──────────────────────────────────────┘
+
+    Bookmarks:
+    ┌──────────────────────────────────────┐
+    │ struct Bookmark {                    │
+    │   ContentNode* node;  ← Ponteiro!    │
+    │   size_t char_offset; ← Offset UTF-8 │
+    │ }                                    │
+    │                                      │
+    │ • Node pointer é estável             │
+    │ • char_offset é relativo ao texto    │
+    │   original (não ao buffer)           │
+    │                                      │
+    │ ✅ Sobrevive a mudanças de layout!   │
+    └──────────────────────────────────────┘
+
+
+SOLUÇÃO #3: Hifenização Correta
+─────────────────────────────────
+
+    class HyphenationEngine {
+      // Usa dicionário + regras morfológicas
+      std::vector<HyphenPoint> FindPoints(word, lang);
+    };
+
+    LayoutTextNode():
+    ┌────────────────────────────────────────────┐
+    │ word = "extraordinário"                    │
+    │                                            │
+    │ if (word_width > remaining_space) {        │
+    │   auto points = hyphen.FindPoints(word);   │
+    │   // → [{pos:7, "extraor-"}, ...]          │
+    │                                            │
+    │   for (auto& p : points) {                 │
+    │     part1 = word.substr(0, p.pos) + "-";   │
+    │     part2 = word.substr(p.pos);            │
+    │                                            │
+    │     if (Fits(part1)) {                     │
+    │       AddToLine(part1);         // "extraor-"│
+    │       CommitLine();                        │
+    │       AddToNextLine(part2);     // "dinário"│
+    │       break;                                │
+    │     }                                      │
+    │   }                                        │
+    │ }                                          │
+    └────────────────────────────────────────────┘
+
+    ✅ Nada se perde!
+    ✅ Pode tentar múltiplos pontos de quebra
+
+
+
+
+═══════════════════════════════════════════════════════════════════════════════
+    TABELA COMPARATIVA
+═══════════════════════════════════════════════════════════════════════════════
+
+┌─────────────────────────┬────────────────────┬──────────────────────────┐
+│ Aspecto                 │ Sistema Atual      │ Nova Arquitetura         │
+├─────────────────────────┼────────────────────┼──────────────────────────┤
+│ Quando pagina?          │ Durante parsing    │ Sob demanda (lazy)       │
+│                         │ (antecipado)       │                          │
+├─────────────────────────┼────────────────────┼──────────────────────────┤
+│ Contexto CSS            │ ❌ Perdido entre   │ ✅ Preservado no         │
+│ (margens, indent)       │    páginas         │    ContentNode.style     │
+├─────────────────────────┼────────────────────┼──────────────────────────┤
+│ Mudar fonte/margens     │ ❌ Requer re-parse │ ✅ Invalida cache,       │
+│                         │    completo        │    recalcula layout      │
+├─────────────────────────┼────────────────────┼──────────────────────────┤
+│ Hifenização             │ ❌ Removida (bugs) │ ✅ Correta com           │
+│                         │                    │    dicionário            │
+├─────────────────────────┼────────────────────┼──────────────────────────┤
+│ Indentação CSS          │ ❌ Desabilitada    │ ✅ Funciona              │
+│ (text-indent, margin-l) │    (causava bugs)  │    corretamente          │
+├─────────────────────────┼────────────────────┼──────────────────────────┤
+│ Bookmarks               │ ❌ Offset em       │ ✅ Ponteiro p/ node      │
+│                         │    buffer (muda)   │    (estável)             │
+├─────────────────────────┼────────────────────┼──────────────────────────┤
+│ Uso de memória          │ Buffer grande      │ Tree + cache ~5 páginas  │
+│                         │ (livro inteiro)    │ (menor footprint)        │
+├─────────────────────────┼────────────────────┼──────────────────────────┤
+│ Debugging               │ Difícil (tokens)   │ Fácil (inspeciona tree)  │
+├─────────────────────────┼────────────────────┼──────────────────────────┤
+│ Progressive rendering   │ ❌ Precisa calcular│ ✅ Calcula só página N   │
+│                         │    0..N para ter N │                          │
+└─────────────────────────┴────────────────────┴──────────────────────────┘
+
+
+
+
+═══════════════════════════════════════════════════════════════════════════════
+    PLANO DE MIGRAÇÃO (Gradual)
+═══════════════════════════════════════════════════════════════════════════════
+
+FASE 1: Construir DocumentTree
+───────────────────────────────
+  • Criar ContentNode, DocumentTree structs
+  • Modificar book_xml_parser.cpp para construir nodes
+  • Manter sistema antigo em paralelo (flag compile-time)
+  • Validação: Tree matches buffer atual
+
+  Arquivos a modificar:
+    - include/book/content_node.h (novo)
+    - include/book/document_tree.h (novo)
+    - source/book/book_xml_parser.cpp (adicionar path alternativo)
+
+  Risco: BAIXO (código novo, não afeta sistema atual)
+
+
+FASE 2: Layout Engine Básico
+─────────────────────────────
+  • Implementar LayoutEngine::ComputePage()
+  • Suporte inicial: texto simples (sem RTL, sem tabelas)
+  • Comparar output com sistema atual
+
+  Arquivos a criar:
+    - include/book/layout_engine.h
+    - source/book/layout_engine.cpp
+
+  Validação:
+    - Testes side-by-side: mesmas quebras de linha?
+    - Benchmark: performance aceitável?
+
+  Risco: MÉDIO (lógica complexa, precisa testes extensivos)
+
+
+FASE 3: Integração com Renderer
+────────────────────────────────
+  • Modificar Page::Draw() para renderizar LayoutPage
+  • Manter ambos sistemas funcionais (runtime flag)
+  • Testar com livros reais
+
+  Arquivos a modificar:
+    - source/book/page.cpp
+
+  Risco: MÉDIO (mudança em código crítico)
+
+
+FASE 4: PageCache e Otimização
+───────────────────────────────
+  • Implementar cache de páginas calculadas
+  • Otimizar: cache de glyphs shaped, etc.
+  • Invalidação inteligente
+
+  Risco: BAIXO (otimização, não muda comportamento)
+
+
+FASE 5: Features Avançadas
+───────────────────────────
+  • RTL com BiDi (reusar código existente)
+  • Tabelas (layout complexo)
+  • Imagens inline com text wrap
+  • Hifenização com dicionário Hunspell
+
+  Risco: ALTO (cada feature requer validação extensa)
+
+
+FASE 6: Deprecação do Sistema Antigo
+─────────────────────────────────────
+  • Remover código legacy após validação completa
+  • Limpar tokens TEXT_LINE_START_X, etc.
+
+  Risco: BAIXO (se fases anteriores bem testadas)
+
+
+
+
+═══════════════════════════════════════════════════════════════════════════════
+    PRÓXIMOS PASSOS IMEDIATOS
+═══════════════════════════════════════════════════════════════════════════════
+
+1. Validar arquitetura proposta
+   → Discutir com você se faz sentido
+
+2. Protótipo Fase 1
+   → Implementar ContentNode + parser básico
+   → Testar com livro pequeno
+
+3. Benchmark
+   → Medir: tempo de parse, uso de memória
+   → Comparar com sistema atual
+
+4. Decisão: Continuar ou ajustar?
+
+
+═══════════════════════════════════════════════════════════════════════════════

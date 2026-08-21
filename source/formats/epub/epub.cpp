@@ -34,6 +34,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 
 #include "shared/base64_utils.h"
 #include "book/book.h"
+#include "book/document_tree_parser.h"
 #include "book/book_parse_deps.h"
 #include "book/book_xml.h"
 #include "shared/debug_log.h"
@@ -237,6 +238,23 @@ static int ParseEpubSpineDocuments(
   book->ClearInlineImages();
   page_start_by_href->clear();
 
+  // Initialize DocumentTree for new layout engine
+  if (book->UsesNewLayoutEngine()) {
+    content_tree::DocumentTree* tree = book->GetDocumentTree();
+    if (!tree) {
+      tree = new content_tree::DocumentTree();
+      tree->root = tree->CreateNode(content_tree::ContentNode::BLOCK);
+      book->SetDocumentTree(tree);
+      DBG_LOG(reporter, "EPUB: doc-tree created");
+    } else {
+      // Book::Close() clears doc_tree_, so a non-null tree here means it
+      // is being reused mid-open (e.g. a retry) rather than fresh -
+      // content would be appended on top of whatever is already parsed.
+      DBG_LOGF(reporter, "EPUB: doc-tree reused nodes=%u (unexpected unless retry)",
+               (unsigned)tree->all_nodes.size());
+    }
+  }
+
   int chapter_num = 1;
   size_t spine_doc_index = 0;
 #ifdef DSLIBRIS_DEBUG
@@ -261,7 +279,8 @@ static int ParseEpubSpineDocuments(
       rc = BOOK_ERR_CANCELLED;
       break;
     }
-    if (book->GetPageCount() >= epub_limits::kMaxPagesInMemory) {
+    if (!book->UsesNewLayoutEngine() &&
+        book->GetPageCount() >= epub_limits::kMaxPagesInMemory) {
       if (reporter) {
         DBG_LOGF(reporter,
                  "EPUB: page limit reached pages=%u limit=%u spine=%u/%u",
@@ -289,10 +308,63 @@ static int ParseEpubSpineDocuments(
       rc = unzOpenCurrentFile(uf);
       if (rc != UNZ_OK)
         break;
-      parsedata->docpath = path;
-      parsedata->archive_path = archive_path;
-      const int parse_rc = epub_parse_currentfile(uf, parsedata, deps, css_scan_uf);
-      const int close_rc = unzCloseCurrentFile(uf);
+
+      int parse_rc = 0;
+      int close_rc = 0;
+
+      if (book->UsesNewLayoutEngine()) {
+        // New DocumentTree approach: read HTML and parse to tree
+        std::vector<unsigned char> html_buffer;
+        const size_t kMaxHtmlSize = 5 * 1024 * 1024; // 5 MB limit per document
+        unsigned char read_buf[8 * 1024];
+        size_t total_read = 0;
+
+        while (true) {
+          const int n = unzReadCurrentFile(uf, read_buf, sizeof(read_buf));
+          if (n < 0) {
+            DBG_LOGF(reporter, "EPUB: zip read-err=%d path=%s read=%u",
+                     n, path.c_str(), (unsigned)total_read);
+            parse_rc = -1; // Read error
+            break;
+          }
+          if (n == 0)
+            break;
+          if (total_read + (size_t)n > kMaxHtmlSize) {
+            DBG_LOGF(reporter,
+                     "EPUB: doc size-limit path=%s read=%u limit=%u (skipped)",
+                     path.c_str(), (unsigned)total_read,
+                     (unsigned)kMaxHtmlSize);
+            parse_rc = 1; // Size limit exceeded
+            break;
+          }
+          html_buffer.insert(html_buffer.end(), read_buf, read_buf + n);
+          total_read += (size_t)n;
+        }
+
+        close_rc = unzCloseCurrentFile(uf);
+
+        if (parse_rc == 0 && !html_buffer.empty()) {
+          content_tree::DocumentTree* tree = book->GetDocumentTree();
+          if (tree) {
+            // Parse HTML and append to tree
+            if (!document_tree_parser::ParseDocumentToTree(
+                    reinterpret_cast<const char*>(html_buffer.data()),
+                    html_buffer.size(), tree, reporter)) {
+              parse_rc = 1; // Parse error
+            }
+          } else {
+            DBG_LOGF(reporter, "EPUB: tree-parser skip path=%s reason=no-tree",
+                     path.c_str());
+            parse_rc = 1; // No tree initialized
+          }
+        }
+      } else {
+        // Old Page-based approach
+        parsedata->docpath = path;
+        parsedata->archive_path = archive_path;
+        parse_rc = epub_parse_currentfile(uf, parsedata, deps, css_scan_uf);
+        close_rc = unzCloseCurrentFile(uf);
+      }
       // Expat XML parse errors (positive, < BOOK_ERR_CANCELLED) are
       // recoverable: real-world EPUBs routinely have malformed XHTML (mismatched
       // tags, bare ampersands, unclosed void elements). Skip the bad document
@@ -312,7 +384,7 @@ static int ParseEpubSpineDocuments(
         // Even on recoverable XML errors the parser may have produced pages
         // before hitting the error. Register those pages so that TOC resolution
         // can map NCX hrefs to page numbers.
-        if (book->GetPageCount() > chapter_start_page) {
+        if (!book->UsesNewLayoutEngine() && book->GetPageCount() > chapter_start_page) {
           std::string parsed_title =
               BuildChapterLabelFromText(parsedata->parsed_doc_title, chapter_num);
           if (!parsed_title.empty())
@@ -334,21 +406,25 @@ static int ParseEpubSpineDocuments(
       rc = (parse_rc != 0) ? parse_rc : close_rc;
       if (rc != 0)
         break;
-      std::string parsed_title =
-          BuildChapterLabelFromText(parsedata->parsed_doc_title, chapter_num);
-      if (!parsed_title.empty())
-        chapter_label = parsed_title;
-      chapter_num++;
-      if (book->GetPageCount() > 0) {
-        book->AddChapter(chapter_start_page, chapter_label);
-        book->SetChapterDocStartPage(path_key, chapter_start_page);
-        if (page_start_by_href->find(path_key) == page_start_by_href->end())
-          (*page_start_by_href)[path_key] = chapter_start_page;
-      }
-      if (stream_writer && stream_writer->IsOpen()) {
-        if (!stream_writer->FlushPages(book, chapter_start_page)) {
-          rc = BOOK_ERR_CANCELLED;
-          break;
+
+      if (!book->UsesNewLayoutEngine()) {
+        // Old page-based chapter tracking
+        std::string parsed_title =
+            BuildChapterLabelFromText(parsedata->parsed_doc_title, chapter_num);
+        if (!parsed_title.empty())
+          chapter_label = parsed_title;
+        chapter_num++;
+        if (book->GetPageCount() > 0) {
+          book->AddChapter(chapter_start_page, chapter_label);
+          book->SetChapterDocStartPage(path_key, chapter_start_page);
+          if (page_start_by_href->find(path_key) == page_start_by_href->end())
+            (*page_start_by_href)[path_key] = chapter_start_page;
+        }
+        if (stream_writer && stream_writer->IsOpen()) {
+          if (!stream_writer->FlushPages(book, chapter_start_page)) {
+            rc = BOOK_ERR_CANCELLED;
+            break;
+          }
         }
       }
 #ifdef DSLIBRIS_DEBUG
@@ -394,6 +470,17 @@ static int ParseEpubSpineDocuments(
     unzClose(inline_probe_uf);
   if (css_scan_uf)
     unzClose(css_scan_uf);
+
+  // Initialize current page start for new layout engine
+  if (book->UsesNewLayoutEngine() && rc == 0) {
+    content_tree::DocumentTree* tree = book->GetDocumentTree();
+    if (tree && tree->root) {
+      layout_engine::PageStart start;
+      start.node = tree->root;
+      start.char_offset = 0;
+      book->SetCurrentPageStart(start);
+    }
+  }
 #ifdef DSLIBRIS_DEBUG
   if (t_after_content)
     *t_after_content = osGetTime();
@@ -512,7 +599,13 @@ int epub(Book *book, std::string name, bool metadataonly) {
     return rc;
   }
 
-  if (epub_page_cache::TryLoad(book, name.c_str(),
+  // The on-disk page cache only stores the legacy Page-based layout; it
+  // never populates DocumentTree. Loading it while the new engine is active
+  // would report success with doc_tree_ still null, and DrawReflow would
+  // silently render an empty page. Skip the cache and always rebuild the
+  // tree until a tree-aware cache format exists.
+  if (!book->UsesNewLayoutEngine() &&
+      epub_page_cache::TryLoad(book, name.c_str(),
                                 deps.ts ? (int)deps.ts->GetPixelSize() : 0,
                                 deps.ts ? (int)deps.ts->linespacing : 0,
                                 deps.paragraph_spacing, deps.paragraph_indent,
@@ -573,7 +666,16 @@ int epub(Book *book, std::string name, bool metadataonly) {
       &t_after_content
 #endif
   );
-  if (rc == 0 && (ShouldAbortEpubOpen(book) || book->GetPageCount() == 0)) {
+  // GetPageCount() reflects the legacy Page vector, which the new engine
+  // never populates (content lands in doc_tree_ instead). Checking it here
+  // would flag every successful new-engine parse as an empty result.
+  bool spine_produced_no_content = book->GetPageCount() == 0;
+  if (book->UsesNewLayoutEngine()) {
+    content_tree::DocumentTree *tree = book->GetDocumentTree();
+    spine_produced_no_content =
+        !tree || content_tree::CountTextChars(tree->root) == 0;
+  }
+  if (rc == 0 && (ShouldAbortEpubOpen(book) || spine_produced_no_content)) {
     rc = ShouldAbortEpubOpen(book) ? BOOK_ERR_CANCELLED : 1;
     if (reporter) {
       DBG_LOGF(reporter,

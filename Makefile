@@ -69,7 +69,12 @@ EXTRA_CPPFILES	:=	source/book/book_xml_parser.cpp \
 					source/book/book_xml_element_style.cpp \
 					source/book/book_xml_inline_handler.cpp \
 					source/book/book_xml_block_handler.cpp \
-					source/book/book_xml_fb2_handler.cpp
+					source/book/book_xml_fb2_handler.cpp \
+					source/book/css_parser.cpp \
+					source/book/layout_engine.cpp \
+					source/book/page_cache.cpp \
+					source/book/document_tree_parser.cpp \
+					source/book/layout_page_renderer.cpp
 
 DATA		:=
 INCLUDES	:=	include third_party/stb third_party/utf8proc third_party/libunibreak/src \

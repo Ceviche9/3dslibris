@@ -137,17 +137,33 @@ Book::Book(const BookContext &c) : ctx(c) {
   open_abort_requested_ = false;
   focused_inline_link_index = -1;
   ClearTocConfidence();
+
+  // New layout architecture
+  doc_tree_ = nullptr;
+  use_new_layout_engine_ = true;  // Enable new layout engine by default for reflow
+  current_page_start_ = layout_engine::PageStart();
+  page_cache_.SetMaxSize(5);
 }
 
 // Destructor for the Book class, responsible for cleaning up resources and
 // closing the book if it's still open. Also logs the book closure if a status
 // reporter is available.
 Book::~Book() {
+  DBG_LOGF(GetStatusReporter(), "BOOK dtor: begin book=%s doc_tree=%p",
+           filename.c_str(), (void*)doc_tree_);
   Close();
   if (coverPixels) {
     delete[] coverPixels;
     coverPixels = nullptr;
   }
+  if (doc_tree_) {
+    // Close() already clears doc_tree_ in the normal path; this only runs
+    // if Close() was skipped or re-entered doc_tree_ some other way.
+    DBG_LOG(GetStatusReporter(), "BOOK dtor: doc_tree_ survived Close()");
+    delete doc_tree_;
+    doc_tree_ = nullptr;
+  }
+  DBG_LOG(GetStatusReporter(), "BOOK dtor: end");
 }
 
 IStatusReporter *Book::GetStatusReporter() {
@@ -873,6 +889,16 @@ void Book::Close() {
   ResetReadingPaceEstimate();
   open_session_id_ = 0;
   open_abort_requested_ = false;
+
+  // New layout architecture: Book is reused across open/close cycles (one
+  // instance per library entry), so leftover tree/cache state must not
+  // survive into the next open or it gets silently reused/appended to.
+  if (doc_tree_) {
+    delete doc_tree_;
+    doc_tree_ = nullptr;
+  }
+  page_cache_.InvalidateAll();
+  current_page_start_ = layout_engine::PageStart();
 }
 
 void Book::ResetCbzFailureState() {
@@ -989,4 +1015,76 @@ void Book::RequestAbortOpen() {
 
 void Book::ClearOpenAbortRequest() {
   open_abort_requested_ = false;
+}
+
+// New layout architecture implementation
+
+// Static helper function for measuring codepoints
+static int MeasureCodepointForLayout(uint32_t cp, void* ctx) {
+  Text* text = static_cast<Text*>(ctx);
+  return static_cast<int>(text->GetAdvance(cp));
+}
+
+bool Book::UsesNewLayoutEngine() const {
+  return use_new_layout_engine_ && format != FORMAT_PDF && !IsCbz();
+}
+
+content_tree::DocumentTree* Book::GetDocumentTree() {
+  return doc_tree_;
+}
+
+void Book::SetDocumentTree(content_tree::DocumentTree* tree) {
+  if (doc_tree_) {
+    delete doc_tree_;
+  }
+  doc_tree_ = tree;
+}
+
+void Book::SetCurrentPageStart(const layout_engine::PageStart& start) {
+  current_page_start_ = start;
+}
+
+layout_engine::LayoutEngine* Book::GetLayoutEngine() {
+  return &layout_engine_;
+}
+
+const layout_engine::LayoutPage& Book::ComputeCurrentLayoutPage() {
+  IStatusReporter *r = GetStatusReporter();
+  if (!doc_tree_) {
+    DBG_LOGF(r, "LAYOUT: ComputeCurrentLayoutPage no doc_tree_ book=%s",
+             filename.c_str());
+    static layout_engine::LayoutPage empty_page;
+    return empty_page;
+  }
+
+  // Configure metrics from current Text settings
+  layout_engine::LayoutMetrics metrics;
+  Text* text = GetText();
+  if (text) {
+    metrics.screen_width = text->LogicalWidth();
+    metrics.screen_height = text->LogicalHeight();
+    metrics.base_margin_left = text->margin.left;
+    metrics.base_margin_right = text->margin.right;
+    metrics.base_margin_top = text->margin.top;
+    metrics.base_margin_bottom = text->margin.bottom;
+    metrics.line_spacing = text->linespacing;
+    metrics.measure_fn = MeasureCodepointForLayout;
+    metrics.measure_ctx = text;
+  } else {
+    DBG_LOGF(r, "LAYOUT: ComputeCurrentLayoutPage no Text renderer book=%s",
+             filename.c_str());
+  }
+
+  if (!current_page_start_.node) {
+    DBG_LOGF(r, "LAYOUT: ComputeCurrentLayoutPage current_page_start_ unset "
+                "book=%s tree_root=%p",
+             filename.c_str(), (void*)doc_tree_->root);
+  }
+
+  // Get page from cache (or compute)
+  return page_cache_.GetPage(current_page_start_, metrics, &layout_engine_, r);
+}
+
+void Book::InvalidateLayoutCache() {
+  page_cache_.InvalidateAll();
 }
