@@ -212,6 +212,8 @@ std::vector<std::string> ScanXhtmlHeadForCssHrefs(unzFile uf,
   return ExtractLinkStylesheetHrefs(buf);
 }
 
+} // namespace
+
 void LoadCssClassMapForDoc(const std::string &archive_path,
                            const std::string &xhtml_path,
                            IStatusReporter *reporter,
@@ -294,6 +296,8 @@ void LoadCssClassMapForDoc(const std::string &archive_path,
 
   if (owns_scan_uf) unzClose(scan_uf);
 }
+
+namespace {
 
 void NormalizeHtmlEntityChunkForXml(const std::string &chunk, bool final,
                                     void *transform_ctx, std::string *out) {

@@ -4,10 +4,97 @@
 */
 
 #include "book/document_tree_parser.h"
+#include "book/book_xml_css_style_utils.h"
 #include "shared/debug_log.h"
 #include <cstring>
 
 namespace document_tree_parser {
+
+namespace {
+
+// Fixed approximation of the display width external CSS percent/em lengths
+// resolve against - the real per-book screen width isn't known yet at parse
+// time (this runs once at book-open, long before any Text/LayoutMetrics
+// exists). Percent-based margins are rare in EPUB body CSS, so this only
+// affects a minority of books and only approximately.
+const int kNominalContainerWidthPx = 240;
+
+int ResolveLengthPx(const book_xml_css_style_utils::MarginTopResult& mtr,
+                    int font_size_px) {
+  return book_xml_css_style_utils::ResolveHorizontalMarginPx(
+      mtr, kNominalContainerWidthPx, font_size_px);
+}
+
+// Maps parsed external-CSS rules (tag + class, already merged by the caller)
+// onto a node's ComputedStyle. Only touches fields the rules actually set,
+// so it composes correctly with the tag defaults already applied and the
+// inline style="" that gets layered on top of this by the caller afterward.
+void ApplyCssClassMargins(const epub_css_class_map::CssClassMargins& css,
+                          content_tree::ComputedStyle* style) {
+  using book_xml_css_style_utils::TextAlign;
+  using book_xml_css_style_utils::WhiteSpaceMode;
+  using book_xml_css_style_utils::TextTransform;
+  using MTUnit = book_xml_css_style_utils::MarginTopResult::Unit;
+
+  if (!style) return;
+
+  if (css.margin_top.unit != MTUnit::None)
+    style->margin_top = ResolveLengthPx(css.margin_top, style->font_size);
+  if (css.margin_bottom.unit != MTUnit::None)
+    style->margin_bottom = ResolveLengthPx(css.margin_bottom, style->font_size);
+  if (css.margin_left.unit != MTUnit::None)
+    style->margin_left = ResolveLengthPx(css.margin_left, style->font_size);
+  if (css.margin_right.unit != MTUnit::None)
+    style->margin_right = ResolveLengthPx(css.margin_right, style->font_size);
+  if (css.text_indent.unit != MTUnit::None)
+    style->text_indent = ResolveLengthPx(css.text_indent, style->font_size);
+
+  if (css.font_size.unit != book_xml_css_style_utils::FontSizeSpec::Unit::None) {
+    style->font_size = book_xml_css_style_utils::ResolveFontSizePx(
+        css.font_size, style->font_size, 16);
+  }
+
+  if (css.has_text_align) {
+    switch (css.text_align) {
+      case TextAlign::Left:    style->text_align = 0; break;
+      case TextAlign::Center:  style->text_align = 1; break;
+      case TextAlign::Right:   style->text_align = 2; break;
+      case TextAlign::Justify: style->text_align = 3; break;
+    }
+  }
+
+  if (css.has_white_space) {
+    switch (css.white_space) {
+      case WhiteSpaceMode::Normal:  style->white_space = 0; break;
+      case WhiteSpaceMode::Pre:     style->white_space = 1; break;
+      case WhiteSpaceMode::Nowrap:  style->white_space = 2; break;
+      case WhiteSpaceMode::PreWrap: style->white_space = 3; break;
+      // No dedicated slot for pre-line (collapse spaces, keep newlines) -
+      // pre-wrap is the closest available behavior in this engine.
+      case WhiteSpaceMode::PreLine: style->white_space = 3; break;
+    }
+  }
+
+  if (css.has_text_transform) {
+    switch (css.text_transform) {
+      case TextTransform::None:       style->text_transform = 0; break;
+      case TextTransform::Uppercase:  style->text_transform = 1; break;
+      case TextTransform::Lowercase:  style->text_transform = 2; break;
+      case TextTransform::Capitalize: style->text_transform = 3; break;
+    }
+  }
+
+  if (css.force_bold) style->font_weight = 700;
+  if (css.reset_bold) style->font_weight = 400;
+  if (css.force_italic) style->font_style = 1;
+  if (css.reset_italic) style->font_style = 0;
+  if (css.no_underline) style->text_decoration = 0;
+
+  if (css.is_display_none) style->display = 2;
+  else if (css.is_display_block) style->display = 1;
+}
+
+} // namespace
 
 void InitTreeParserState(TreeParserState* state, content_tree::DocumentTree* tree) {
   state->doc_tree = tree;
@@ -78,6 +165,30 @@ void ApplyAttributesAndStyle(
 ) {
   // Apply default tag styles
   css_parser::ApplyDefaultTagStyles(tag, &node->style);
+
+  // Apply external stylesheet rules (tag selector, then class selectors -
+  // lower specificity than the inline style="" handled below in the same
+  // attribute pass).
+  if (state->css_class_map) {
+    epub_css_class_map::CssClassMargins css;
+    const bool has_tag_rule =
+        epub_css_class_map::LookupAllForTag(tag, *state->css_class_map, &css);
+    const char* class_attr = nullptr;
+    for (int i = 0; attr && attr[i]; i += 2) {
+      if (strcmp(attr[i], "class") == 0) {
+        class_attr = attr[i + 1];
+        break;
+      }
+    }
+    bool has_class_rule = false;
+    if (class_attr && class_attr[0]) {
+      has_class_rule = epub_css_class_map::MergeClassRulesToStyle(
+          class_attr, *state->css_class_map, &css);
+    }
+    if (has_tag_rule || has_class_rule) {
+      ApplyCssClassMargins(css, &node->style);
+    }
+  }
 
   // Process attributes
   for (int i = 0; attr && attr[i]; i += 2) {
@@ -228,7 +339,8 @@ bool ParseDocumentToTree(
   const char* html_content,
   size_t html_len,
   content_tree::DocumentTree* out_tree,
-  IStatusReporter* reporter
+  IStatusReporter* reporter,
+  const epub_css_class_map::CssClassMap* css_class_map
 ) {
   if (!html_content || html_len == 0 || !out_tree) {
     DBG_LOGF_CAT(reporter, DBG_LEVEL_ERROR, DBG_CAT_EPUB,
@@ -243,6 +355,8 @@ bool ParseDocumentToTree(
   // Initialize parser state
   TreeParserState state;
   InitTreeParserState(&state, out_tree);
+  if (css_class_map && !css_class_map->empty())
+    state.css_class_map = css_class_map;
 
   // Create Expat parser
   XML_Parser parser = XML_ParserCreate(NULL);

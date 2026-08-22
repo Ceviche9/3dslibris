@@ -29,6 +29,21 @@ content_tree::ContentNode* NextInDocumentOrder(content_tree::ContentNode* node) 
   return nullptr;
 }
 
+// glyph_idx is a position in the shaped glyph array (one entry per
+// codepoint); char_offset/global_offset are byte offsets into the node's
+// UTF-8 text. These only coincide for pure-ASCII text - any multi-byte
+// codepoint (accented letters, all over Portuguese text) before glyph_idx
+// makes them diverge, which previously made every resumed page start a few
+// bytes short of the real break point (glyphs[idx].text.byte_offset is the
+// true byte position; remaining_len is the byte length of the whole shaped
+// run, used as the end-of-run sentinel when glyph_idx == glyphs.size()).
+size_t GlyphIndexToByteOffset(
+    const std::vector<text_layout_utils::ShapedGlyph>& glyphs,
+    size_t glyph_idx, size_t remaining_len) {
+  if (glyph_idx >= glyphs.size()) return remaining_len;
+  return glyphs[glyph_idx].text.byte_offset;
+}
+
 } // namespace
 
 LayoutEngine::LayoutEngine() {
@@ -189,8 +204,8 @@ bool LayoutEngine::LayoutTextNode(
   if (!node || node->text_utf8.empty()) return false;
 
   // Global offset at (node, start_offset), i.e. before any glyph in this
-  // call has been consumed. Deltas of glyph_idx below apply equally to the
-  // node-relative offset (start_offset + glyph_idx) and this baseline.
+  // call has been consumed. Byte deltas computed via GlyphIndexToByteOffset()
+  // below apply equally to the node-relative offset and this baseline.
   const size_t node_start_global = ctx.global_chars_consumed;
 
   const char* text = node->text_utf8.c_str() + start_offset;
@@ -295,8 +310,10 @@ bool LayoutEngine::LayoutTextNode(
         // Check if we're out of space
         if (!LineWouldFit(ctx.pen_y, node->style.line_height, ctx)) {
           // Page full - save position and return
-          page.end_position = PageStart(node, start_offset + glyph_idx);
-          page.end_position.global_offset = node_start_global + glyph_idx;
+          const size_t byte_off =
+              GlyphIndexToByteOffset(glyphs, glyph_idx, remaining_len);
+          page.end_position = PageStart(node, start_offset + byte_off);
+          page.end_position.global_offset = node_start_global + byte_off;
           return true;
         }
 
@@ -313,8 +330,12 @@ bool LayoutEngine::LayoutTextNode(
     // Create fragment for this segment
     LineFragment frag;
     frag.source_node = node;
-    frag.text_start = start_offset + glyph_idx;
-    frag.text_length = break_result.end_index - glyph_idx;
+    const size_t frag_byte_start =
+        GlyphIndexToByteOffset(glyphs, glyph_idx, remaining_len);
+    const size_t frag_byte_end =
+        GlyphIndexToByteOffset(glyphs, break_result.end_index, remaining_len);
+    frag.text_start = start_offset + frag_byte_start;
+    frag.text_length = frag_byte_end - frag_byte_start;
     frag.glyphs.assign(glyphs.begin() + glyph_idx, glyphs.begin() + break_result.end_index);
     frag.x = ctx.pen_x;
     frag.y = ctx.pen_y;
@@ -347,8 +368,10 @@ bool LayoutEngine::LayoutTextNode(
       CommitLine(ctx, page);
 
       if (!LineWouldFit(ctx.pen_y, ctx.current_line_height, ctx)) {
-        page.end_position = PageStart(node, start_offset + glyph_idx);
-        page.end_position.global_offset = node_start_global + glyph_idx;
+        const size_t byte_off =
+            GlyphIndexToByteOffset(glyphs, glyph_idx, remaining_len);
+        page.end_position = PageStart(node, start_offset + byte_off);
+        page.end_position.global_offset = node_start_global + byte_off;
         return true;
       }
 
@@ -359,8 +382,10 @@ bool LayoutEngine::LayoutTextNode(
       CommitLine(ctx, page);
 
       if (!LineWouldFit(ctx.pen_y, ctx.current_line_height, ctx)) {
-        page.end_position = PageStart(node, start_offset + glyph_idx);
-        page.end_position.global_offset = node_start_global + glyph_idx;
+        const size_t byte_off =
+            GlyphIndexToByteOffset(glyphs, glyph_idx, remaining_len);
+        page.end_position = PageStart(node, start_offset + byte_off);
+        page.end_position.global_offset = node_start_global + byte_off;
         return true;
       }
 
@@ -370,7 +395,7 @@ bool LayoutEngine::LayoutTextNode(
 
   // Mark end of this text node, and advance the running global offset so
   // the next node (sibling/parent's next child) starts counting from here.
-  ctx.global_chars_consumed = node_start_global + glyph_idx;
+  ctx.global_chars_consumed = node_start_global + remaining_len;
   if (glyph_idx >= glyphs.size()) {
     page.end_position = PageStart(node, node->text_utf8.size());
     page.end_position.global_offset = ctx.global_chars_consumed;

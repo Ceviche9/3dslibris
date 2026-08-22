@@ -7,10 +7,10 @@
 #pragma once
 
 // Margins
-#define MARGINLEFT 12
-#define MARGINRIGHT 12
-#define MARGINTOP 10
-#define MARGINBOTTOM 36
+#define MARGINLEFT 18
+#define MARGINRIGHT 18
+#define MARGINTOP 20
+#define MARGINBOTTOM 42
 #define LINESPACING 0
 
 // 3DS screen dimensions in landscape mode:

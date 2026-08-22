@@ -7,6 +7,7 @@
 
 #include "book/content_node.h"
 #include "book/css_parser.h"
+#include "book/epub_css_class_map.h"
 #include <vector>
 #include <string>
 #include <expat.h>
@@ -24,10 +25,17 @@ struct TreeParserState {
   std::string text_buffer;
   std::string lang;
 
+  // Optional. Non-owning; parsed external stylesheet rules for the document
+  // currently being parsed (from <link rel="stylesheet">), looked up by tag
+  // name and class="" attribute in ApplyAttributesAndStyle(). Null when the
+  // caller has none (e.g. no linked stylesheet, or a non-EPUB caller).
+  const epub_css_class_map::CssClassMap* css_class_map;
+
   TreeParserState()
     : doc_tree(nullptr),
       current_node(nullptr),
-      lang("en")
+      lang("en"),
+      css_class_map(nullptr)
   {}
 };
 
@@ -54,12 +62,15 @@ void ApplyAttributesAndStyle(
 );
 
 // Parse full document. `reporter` is optional and only used for
-// DSLIBRIS_DEBUG logging.
+// DSLIBRIS_DEBUG logging. `css_class_map` is optional: parsed rules from the
+// document's linked external stylesheet(s), applied (tag then class) before
+// any inline style="" attribute on each element.
 bool ParseDocumentToTree(
   const char* html_content,
   size_t html_len,
   content_tree::DocumentTree* out_tree,
-  IStatusReporter* reporter = nullptr
+  IStatusReporter* reporter = nullptr,
+  const epub_css_class_map::CssClassMap* css_class_map = nullptr
 );
 
 } // namespace document_tree_parser

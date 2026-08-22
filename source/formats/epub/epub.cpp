@@ -346,10 +346,17 @@ static int ParseEpubSpineDocuments(
         if (parse_rc == 0 && !html_buffer.empty()) {
           content_tree::DocumentTree* tree = book->GetDocumentTree();
           if (tree) {
+            // Resolve and parse this doc's linked stylesheet(s) - cached on
+            // parsedata so a stylesheet shared across the whole spine (the
+            // common case) is only read/parsed once per book.
+            epub_css_class_map::CssClassMap doc_css_map;
+            LoadCssClassMapForDoc(archive_path, path, reporter, parsedata,
+                                  &doc_css_map, css_scan_uf);
+
             // Parse HTML and append to tree
             if (!document_tree_parser::ParseDocumentToTree(
                     reinterpret_cast<const char*>(html_buffer.data()),
-                    html_buffer.size(), tree, reporter)) {
+                    html_buffer.size(), tree, reporter, &doc_css_map)) {
               parse_rc = 1; // Parse error
             }
           } else {
